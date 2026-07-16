@@ -118,6 +118,20 @@ try {
            or (c.profile_b = ${bob.id} and c.profile_a = p.id))`;
   check("deck excludes passed + connected people", deck.length === 0);
 
+  // -- 6b. deck ranks shared-tag overlap first (random() only breaks ties) -----
+  const hi = { id: id(), event_id: eventId, email: "hi@smoke.test", name: "hi", tags: ["AI", "coffee"], solo: false };
+  const lo = { id: id(), event_id: eventId, email: "lo@smoke.test", name: "lo", tags: ["knitting"], solo: false };
+  await sql`insert into profiles ${sql([hi, lo])}`;
+  // bob's tags are ["AI","coffee"]: hi overlaps 2, lo overlaps 0 -> hi first.
+  const ranked = await sql`
+    select p.id from profiles p
+    where p.event_id = ${eventId} and p.id in (${hi.id}, ${lo.id})
+    order by (
+      select count(*) from unnest(p.tags) as t(tag)
+      where t.tag = any(array(select unnest(tags) from profiles where id = ${bob.id}))
+    ) desc, random()`;
+  check("deck ranks higher tag-overlap first", ranked[0]?.id === hi.id && ranked[1]?.id === lo.id);
+
   // -- 7. invite: instant connection with the invite as first message ----------
   const dana = {
     id: id(), event_id: eventId, email: "dana@smoke.test", name: "dana", tags: [],

@@ -33,7 +33,10 @@ export async function getProfile(profileId: string) {
 
 // Deck candidates: never anyone you've already acted on (any intent, incl.
 // pass), never an existing connection, never yourself, never ids in `exclude`
-// (cards already in the client's hand).
+// (cards already in the client's hand). Ranked by shared-tag overlap (most
+// interests in common first), with random() as the tiebreak so the deck stays
+// fresh and people with no overlap still surface. No tags on your profile ->
+// overlap is 0 for everyone -> pure random, same as before.
 export async function getDeckCards(
   eventId: string,
   me: string,
@@ -55,7 +58,11 @@ export async function getDeckCards(
         where (c.profile_a = ${me} and c.profile_b = p.id)
            or (c.profile_b = ${me} and c.profile_a = p.id)
       )
-    order by random()
+    order by (
+      select count(*)
+      from unnest(p.tags) as t(tag)
+      where t.tag = any(array(select unnest(tags) from profiles where id = ${me}))
+    ) desc, random()
     limit ${limit}`;
   return rows as unknown as Card[];
 }
