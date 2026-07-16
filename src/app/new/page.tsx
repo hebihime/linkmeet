@@ -4,8 +4,16 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { createEvent, type CreatedEvent } from "@/lib/actions";
 
+// datetime-local value for "now" in the organizer's own timezone.
+function localNow() {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 16);
+}
+
 export default function NewEventPage() {
   const [name, setName] = useState("");
+  const [startsAt, setStartsAt] = useState(localNow);
   const [emails, setEmails] = useState("");
   const [seed, setSeed] = useState(true);
   const [seedCount, setSeedCount] = useState(10);
@@ -15,8 +23,9 @@ export default function NewEventPage() {
 
   function submit() {
     setError(null);
+    const iso = new Date(startsAt).toISOString();
     start(async () => {
-      const res = await createEvent(name, emails, seed ? seedCount : 0);
+      const res = await createEvent(name, iso, emails, seed ? seedCount : 0);
       if ("error" in res) setError(res.error);
       else setCreated(res);
     });
@@ -42,6 +51,22 @@ export default function NewEventPage() {
           onChange={(e) => setName(e.target.value)}
           placeholder="HIMSS 2026"
           className="rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-3 outline-none focus:border-neutral-400"
+        />
+      </label>
+
+      <label className="flex flex-col gap-2 text-sm">
+        <span className="text-neutral-300">
+          Starts{" "}
+          <span className="text-neutral-500">
+            (swiping unlocks at this time — before it, attendees see the Explore
+            lobby)
+          </span>
+        </span>
+        <input
+          type="datetime-local"
+          value={startsAt}
+          onChange={(e) => setStartsAt(e.target.value)}
+          className="rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-3 outline-none [color-scheme:dark] focus:border-neutral-400"
         />
       </label>
 
@@ -86,7 +111,9 @@ export default function NewEventPage() {
               }
               className="w-20 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 outline-none focus:border-neutral-400"
             />
-            <span className="text-neutral-500">about half will match you</span>
+            <span className="text-neutral-500">
+              about half will send you requests
+            </span>
           </label>
         )}
       </div>

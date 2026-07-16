@@ -1,13 +1,18 @@
--- LinkMeet MVP schema
+-- LinkMeet v2 schema
 -- Everything is scoped by event_id. That FK is the entire "multi-tenancy".
+-- Idempotent and additive against the v1 database: v1's swipes/matches tables
+-- are left alone until v2 is cut over (drop them afterwards with:
+--   drop table if exists swipes, matches;)
 
 create table if not exists events (
-  id          text primary key,              -- url slug, e.g. "himss-2026"
+  id          text primary key,               -- url slug, e.g. "himss-2026"
   name        text not null,
+  starts_at   timestamptz not null default now(), -- deck unlocks at/after this
   created_at  timestamptz not null default now()
 );
+alter table events add column if not exists starts_at timestamptz not null default now();
 
--- Pre-bound: organizer supplies (email) list, we generate one code per email.
+-- Pre-bound: organizer supplies emails; we generate one code per email.
 -- Login requires the exact (event_id, email, code) triple. A leaked code is
 -- useless without its matching email.
 create table if not exists access_codes (
@@ -20,43 +25,66 @@ create table if not exists access_codes (
   unique (event_id, code)
 );
 
--- One profile per (event, email). Created on first successful login (claim).
 create table if not exists profiles (
   id          text primary key,
   event_id    text not null references events(id) on delete cascade,
   email       text not null,
   name        text not null,
   headline    text,
-  tags        text[] not null default '{}',
+  tags        text[] not null default '{}',    -- interest tags, featured on the card
   photo_url   text,
+  solo        boolean not null default false,  -- "attending solo" — feeds Explore stats
+  is_test     boolean not null default false,
   created_at  timestamptz not null default now(),
   unique (event_id, email)
 );
+alter table profiles add column if not exists solo boolean not null default false;
+alter table profiles add column if not exists is_test boolean not null default false;
 
--- Directional swipe. liked = true (Meet/yes) or false (Pass).
-create table if not exists swipes (
-  swiper_id   text not null references profiles(id) on delete cascade,
-  target_id   text not null references profiles(id) on delete cascade,
-  event_id    text not null references events(id) on delete cascade,
-  liked       boolean not null,
-  created_at  timestamptz not null default now(),
-  primary key (swiper_id, target_id)
+-- One row per (from -> to). Records the deck action AND, for non-pass kinds,
+-- the async request lifecycle. 'pass' rows exist only to keep the deck from
+-- re-showing that person; their status is 'none'.
+create table if not exists intents (
+  id           text primary key,
+  event_id     text not null references events(id) on delete cascade,
+  from_id      text not null references profiles(id) on delete cascade,
+  to_id        text not null references profiles(id) on delete cascade,
+  kind         text not null check (kind in ('meet','link','invite','pass')),
+  message      text,                            -- invite description
+  photo_url    text,                            -- optional invite photo
+  status       text not null default 'pending'
+                 check (status in ('pending','accepted','declined','none')),
+  created_at   timestamptz not null default now(),
+  responded_at timestamptz,
+  unique (event_id, from_id, to_id)
 );
 
--- Mutual like. profile_a < profile_b (canonical order) so a pair is one row.
-create table if not exists matches (
-  id          text primary key,
-  event_id    text not null references events(id) on delete cascade,
-  profile_a   text not null references profiles(id) on delete cascade,
-  profile_b   text not null references profiles(id) on delete cascade,
-  created_at  timestamptz not null default now(),
+-- Chat-enabled relationship. Created when a request is accepted, or immediately
+-- for an invite. profile_a < profile_b (canonical) so a pair is one row.
+create table if not exists connections (
+  id               text primary key,
+  event_id         text not null references events(id) on delete cascade,
+  profile_a        text not null references profiles(id) on delete cascade,
+  profile_b        text not null references profiles(id) on delete cascade,
+  origin           text not null,               -- 'meet' | 'link' | 'invite'
+  met_a            boolean not null default false,
+  met_b            boolean not null default false,
+  met_confirmed_at timestamptz,
+  created_at       timestamptz not null default now(),
   unique (profile_a, profile_b)
 );
 
-alter table profiles add column if not exists is_test boolean not null default false;
+create table if not exists messages (
+  id            text primary key,
+  connection_id text not null references connections(id) on delete cascade,
+  sender_id     text not null references profiles(id) on delete cascade,
+  body          text not null,
+  created_at    timestamptz not null default now()
+);
 
 create index if not exists idx_profiles_event on profiles(event_id);
-create index if not exists idx_swipes_event_swiper on swipes(event_id, swiper_id);
-create index if not exists idx_matches_event on matches(event_id);
-create index if not exists idx_matches_a on matches(profile_a);
-create index if not exists idx_matches_b on matches(profile_b);
+create index if not exists idx_intents_to on intents(event_id, to_id, status);
+create index if not exists idx_intents_from on intents(event_id, from_id);
+create index if not exists idx_connections_a on connections(profile_a);
+create index if not exists idx_connections_b on connections(profile_b);
+create index if not exists idx_messages_conn on messages(connection_id, created_at);

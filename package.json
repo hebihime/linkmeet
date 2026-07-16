@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "migrate": "node --env-file=.env.local scripts/migrate.mjs",
+    "smoke": "node --env-file=.env.local scripts/smoke.mjs",
+    "smoke:live": "node --env-file=.env.local scripts/e2e-live.mjs",
+    "smoke:golden": "node --env-file=.env.local scripts/golden-path.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1087.0",

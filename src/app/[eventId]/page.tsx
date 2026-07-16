@@ -24,7 +24,7 @@ export default async function EventEntry({
 
   const session = await getSession();
   if (session?.eventId === eventId && session.profileId) {
-    redirect(`/${eventId}/deck`);
+    redirect(`/${eventId}/explore`);
   }
 
   return <LoginForm eventId={eventId} eventName={event.name} />;

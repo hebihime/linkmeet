@@ -30,6 +30,15 @@ const TAGS = [
   "robotics", "biotech", "VC", "design", "gaming", "sushi", "chess", "surfing",
 ];
 
+const REPLIES = [
+  "Hey! Glad this went through — where are you right now?",
+  "Oh nice, was hoping you'd reach out. Coffee near the main hall?",
+  "Hey hey. I'm around all afternoon if you want to grab a seat somewhere.",
+  "Perfect timing, I was just about to bail on this session. Meet up?",
+  "Hi! I'm by the expo floor entrance — easy to find, tall coffee in hand.",
+  "Love it. I've got 30 free at the top of the hour if that works?",
+];
+
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -57,6 +66,7 @@ export async function seedTestUsers(eventId: string, count: number) {
       headline: HEADLINES[Math.floor(Math.random() * HEADLINES.length)],
       tags,
       photo_url: `https://i.pravatar.cc/400?u=${id}`,
+      solo: Math.random() < 0.4,
       is_test: true,
     };
   });
@@ -65,10 +75,11 @@ export async function seedTestUsers(eventId: string, count: number) {
 }
 
 /**
- * Make about half of an event's test users "like" a real profile, so the
- * real user gets instant matches when they swipe Meet back.
+ * Have ~half of an event's test users send the real attendee a pending
+ * Meet/Link request, so the Requests inbox has content to accept/decline
+ * right away.
  */
-export async function seedTestLikes(eventId: string, realProfileId: string) {
+export async function seedTestRequests(eventId: string, realProfileId: string) {
   const testers = await sql`
     select id from profiles where event_id = ${eventId} and is_test = true`;
   if (testers.length === 0) return;
@@ -79,13 +90,30 @@ export async function seedTestLikes(eventId: string, realProfileId: string) {
   );
   if (half.length === 0) return;
 
-  const rows = half.map((testerId) => ({
-    swiper_id: testerId,
-    target_id: realProfileId,
+  const rows = half.map((testerId, i) => ({
+    id: newId(),
     event_id: eventId,
-    liked: true,
+    from_id: testerId,
+    to_id: realProfileId,
+    kind: i % 3 === 0 ? "meet" : "link",
+    status: "pending",
   }));
   await sql`
-    insert into swipes ${sql(rows)}
-    on conflict (swiper_id, target_id) do nothing`;
+    insert into intents ${sql(rows)}
+    on conflict (event_id, from_id, to_id) do nothing`;
+}
+
+/**
+ * One canned reply from a test user in a fresh connection, so chat + polling
+ * are testable solo. No-op if the test user already spoke.
+ */
+export async function testUserReply(connectionId: string, testUserId: string) {
+  const body = REPLIES[Math.floor(Math.random() * REPLIES.length)];
+  await sql`
+    insert into messages (id, connection_id, sender_id, body)
+    select ${newId()}, ${connectionId}, ${testUserId}, ${body}
+    where not exists (
+      select 1 from messages
+      where connection_id = ${connectionId} and sender_id = ${testUserId}
+    )`;
 }

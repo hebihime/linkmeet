@@ -25,7 +25,7 @@ export default function LoginForm({
         setError(res.error);
         return;
       }
-      router.push(`/${eventId}/${res.hasProfile ? "deck" : "profile"}`);
+      router.push(`/${eventId}/${res.hasProfile ? "explore" : "profile"}`);
     });
   }
 
