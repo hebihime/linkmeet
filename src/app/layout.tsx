@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "LinkMeet",
-  description: "Meet the people worth meeting at your event.",
+  description: "Quick connections at conventions",
 };
 
 // Native-app feel: no pinch/double-tap zoom, draw under the home indicator.

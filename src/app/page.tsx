@@ -23,7 +23,7 @@ export default function Home() {
           LinkMeet
         </h1>
         <p className="mt-3 text-lg text-neutral-300">
-          Meet the people worth meeting at your convention.
+          Quick connections at conventions
         </p>
       </div>
 
