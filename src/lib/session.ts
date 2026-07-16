@@ -1,8 +1,14 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 
-const secret = new TextEncoder().encode(process.env.SESSION_SECRET);
 const COOKIE = "lm_session";
+
+// Read at call time (not import) so `next build` needs no live env.
+function secret() {
+  const s = process.env.SESSION_SECRET;
+  if (!s) throw new Error("SESSION_SECRET is not set");
+  return new TextEncoder().encode(s);
+}
 
 export type Session = { eventId: string; email: string; profileId?: string };
 
@@ -11,7 +17,7 @@ export async function setSession(s: Session) {
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("30d")
-    .sign(secret);
+    .sign(secret());
   (await cookies()).set(COOKIE, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
@@ -25,7 +31,7 @@ export async function getSession(): Promise<Session | null> {
   const c = (await cookies()).get(COOKIE);
   if (!c) return null;
   try {
-    const { payload } = await jwtVerify(c.value, secret);
+    const { payload } = await jwtVerify(c.value, secret());
     return payload as unknown as Session;
   } catch {
     return null;
