@@ -23,7 +23,7 @@ export default function Home() {
           LinkMeet
         </h1>
         <p className="mt-3 text-lg text-neutral-300">
-          Quick connections at conventions
+          Quick connections for conventions
         </p>
       </div>
 
