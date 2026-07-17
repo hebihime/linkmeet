@@ -71,14 +71,18 @@ async function callFormAction(path, name, fields) {
 
 const EMAIL = "golden@e2e.test";
 let eventId = null;
+const extraEvents = []; // open/code events created in step 9, cleaned up after
 
 try {
   // ---- 1. create event (with seeded test attendees) --------------------------
   const create = await callAction("/new", "createEvent", [
-    "Golden Path Con",
-    new Date().toISOString(), // starts now -> Connect is live
-    EMAIL,
-    6,
+    {
+      name: "Golden Path Con",
+      startsAtIso: new Date().toISOString(), // starts now -> Connect is live
+      accessMode: "roster",
+      emails: EMAIL,
+      seedCount: 6,
+    },
   ]);
   check("createEvent action responds", create.status === 200);
 
@@ -211,11 +215,63 @@ try {
     check("invite: no untouched tester available (seed too small)", false);
   }
   void inviteTarget;
+
+  // ---- 9. the other two access modes, over the wire ----------------------------
+  // open: email alone gets a session.
+  await callAction("/new", "createEvent", [
+    {
+      name: "Golden Open Con",
+      startsAtIso: new Date().toISOString(),
+      accessMode: "open",
+      seedCount: 0,
+    },
+  ]);
+  const openEvt = (
+    await sql`select id, access_mode, join_code from events
+              where name = 'Golden Open Con' order by created_at desc limit 1`
+  )[0];
+  if (openEvt) extraEvents.push(openEvt.id);
+  check(
+    "open event created (no join_code)",
+    openEvt?.access_mode === "open" && openEvt.join_code === null,
+  );
+  cookie = "";
+  await callAction(`/${openEvt.id}`, "login", [openEvt.id, "walkup@e2e.test", ""]);
+  check("open login: email alone sets a session", cookie.startsWith("lm_session="));
+
+  // code: the shared join code gates entry; wrong code doesn't.
+  await callAction("/new", "createEvent", [
+    {
+      name: "Golden Code Con",
+      startsAtIso: new Date().toISOString(),
+      accessMode: "code",
+      joinCode: "golden99", // lowercase on purpose — stored uppercased
+      seedCount: 0,
+    },
+  ]);
+  const codeEvt = (
+    await sql`select id, access_mode, join_code from events
+              where name = 'Golden Code Con' order by created_at desc limit 1`
+  )[0];
+  if (codeEvt) extraEvents.push(codeEvt.id);
+  check(
+    "code event stores the uppercased join code",
+    codeEvt?.access_mode === "code" && codeEvt.join_code === "GOLDEN99",
+  );
+  cookie = "";
+  await callAction(`/${codeEvt.id}`, "login", [codeEvt.id, "door@e2e.test", "WRONG1"]);
+  check("code login: wrong code sets no session", cookie === "");
+  await callAction(`/${codeEvt.id}`, "login", [codeEvt.id, "door@e2e.test", "golden99"]);
+  check(
+    "code login: right code (any case) sets a session",
+    cookie.startsWith("lm_session="),
+  );
 } catch (err) {
   ok = false;
   console.error("GOLDEN-PATH ERROR:", err);
 } finally {
   if (eventId) await sql`delete from events where id = ${eventId}`;
+  for (const id of extraEvents) await sql`delete from events where id = ${id}`;
   await sql.end();
 }
 

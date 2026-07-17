@@ -2,25 +2,51 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { login } from "@/lib/actions";
+import { login, type AccessMode } from "@/lib/actions";
+
+// Per-mode copy. The gate differs; the email-as-identity flow doesn't.
+const COPY: Record<
+  AccessMode,
+  { intro: (name: string) => string; codeLabel: string | null; codeHint: string }
+> = {
+  open: {
+    intro: (name) => `Enter your email to join ${name}.`,
+    codeLabel: null,
+    codeHint: "",
+  },
+  code: {
+    intro: () => "Enter your email and the event code.",
+    codeLabel: "Event code",
+    codeHint: "It's posted at your venue",
+  },
+  roster: {
+    intro: () =>
+      "Enter the email you were invited with and your private access code.",
+    codeLabel: "Access code",
+    codeHint: "",
+  },
+};
 
 export default function LoginForm({
   eventId,
   eventName,
+  accessMode,
 }: {
   eventId: string;
   eventName: string;
+  accessMode: AccessMode;
 }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const copy = COPY[accessMode];
 
   function submit() {
     setError(null);
     start(async () => {
-      const res = await login(eventId, email, code);
+      const res = await login(eventId, email, accessMode === "open" ? "" : code);
       if ("error" in res) {
         setError(res.error);
         return;
@@ -37,9 +63,7 @@ export default function LoginForm({
         </p>
         <h1 className="mt-1 text-3xl font-bold tracking-tight">{eventName}</h1>
       </div>
-      <p className="text-sm text-neutral-400">
-        Enter the email you were invited with and your private access code.
-      </p>
+      <p className="text-sm text-neutral-400">{copy.intro(eventName)}</p>
 
       <label className="flex flex-col gap-2 text-sm">
         <span className="text-neutral-300">Email</span>
@@ -52,15 +76,22 @@ export default function LoginForm({
         />
       </label>
 
-      <label className="flex flex-col gap-2 text-sm">
-        <span className="text-neutral-300">Access code</span>
-        <input
-          value={code}
-          onChange={(e) => setCode(e.target.value.toUpperCase())}
-          placeholder="XXXXXXXX"
-          className="rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-3 font-mono tracking-widest outline-none focus:border-neutral-400"
-        />
-      </label>
+      {copy.codeLabel && (
+        <label className="flex flex-col gap-2 text-sm">
+          <span className="text-neutral-300">
+            {copy.codeLabel}
+            {copy.codeHint && (
+              <span className="text-neutral-500"> ({copy.codeHint})</span>
+            )}
+          </span>
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value.toUpperCase())}
+            placeholder="XXXXXXXX"
+            className="rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-3 font-mono tracking-widest outline-none focus:border-neutral-400"
+          />
+        </label>
+      )}
 
       {error && <p className="text-sm text-red-400">{error}</p>}
 

@@ -22,7 +22,15 @@ try {
     where table_schema = 'public' order by table_name`;
   console.log("Migration OK. Tables:", tables.map((t) => t.table_name).join(", "));
 } catch (err) {
-  console.error("Migration failed:", err.message);
+  // AggregateError (e.g. all-connect-attempts-timed-out) has an EMPTY message;
+  // dump the useful fields so a network failure never masquerades as SQL.
+  console.error("Migration failed:", err.message || `${err.name} (${err.code})`);
+  if (err.errors) for (const e of err.errors) console.error("  -", e.message);
+  if (err.code === "ETIMEDOUT" || err.code === "EHOSTUNREACH")
+    console.error(
+      "Network issue reaching the DB — if attempts time out, raise Node's",
+      "happy-eyeballs timeout: --network-family-autoselection-attempt-timeout=3000",
+    );
   process.exit(1);
 } finally {
   await sql.end();

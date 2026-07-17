@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 TOKEN="${1:?Usage: bash scripts/deploy-vercel.sh <vercel-token>}"
-SCOPE="${2:-jps-projects-c7adf5bf}"
+SCOPE="${2:-${VERCEL_SCOPE:?Set VERCEL_SCOPE or pass the Vercel scope as arg 2}}"
 
 V() { npx --yes vercel "$@" --token "$TOKEN" --scope "$SCOPE"; }
 

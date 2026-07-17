@@ -13,6 +13,8 @@ const check = (label, cond) => {
 };
 
 const eventId = `smoke-${id()}`;
+const openEventId = `smoke-open-${id()}`;
+const codeEventId = `smoke-code-${id()}`;
 
 async function ensureConnection(evt, x, y, origin) {
   const [a, b] = x < y ? [x, y] : [y, x];
@@ -145,12 +147,59 @@ try {
   const invite = await sql`
     select body from messages where connection_id = ${connBD} order by created_at limit 1`;
   check("invite opens a chat seeded with the invite text", invite[0]?.body === "drinks at 7?");
+
+  // -- 8. access modes: the three gates, mirrored at the SQL level -------------
+  // The main smoke event was inserted without access_mode -> legacy events
+  // must land on 'roster' so nothing regresses.
+  const legacy = await sql`select access_mode from events where id = ${eventId}`;
+  check("events default to roster mode (legacy-safe)", legacy[0]?.access_mode === "roster");
+
+  await sql`insert into events (id, name, access_mode)
+            values (${openEventId}, ${"Smoke Open Con"}, 'open')`;
+  const openRow = await sql`
+    select access_mode, join_code from events where id = ${openEventId}`;
+  check(
+    "open mode: no join_code — email alone passes the gate",
+    openRow[0]?.access_mode === "open" && openRow[0].join_code === null,
+  );
+
+  await sql`insert into events (id, name, access_mode, join_code)
+            values (${codeEventId}, ${"Smoke Code Con"}, 'code', 'JOIN2026')`;
+  // The login action uppercases attendee input and compares to join_code.
+  const attempt = (typed) =>
+    sql`select (${typed.trim().toUpperCase()} = join_code) as pass
+        from events where id = ${codeEventId}`;
+  const [right, wrong] = await Promise.all([attempt("join2026"), attempt("NOPE")]);
+  check("code mode: shared code matches case-insensitively", right[0]?.pass === true);
+  check("code mode: wrong code is rejected", wrong[0]?.pass === false);
+
+  // roster still needs the exact triple (a leaked code without its email is useless).
+  await sql`insert into access_codes (id, event_id, email, code)
+            values (${id()}, ${eventId}, ${"eve@smoke.test"}, ${"EVECODE1"})`;
+  const triple = await sql`
+    select 1 from access_codes
+    where event_id = ${eventId} and email = ${"eve@smoke.test"} and code = ${"EVECODE1"}`;
+  const mismatched = await sql`
+    select 1 from access_codes
+    where event_id = ${eventId} and email = ${"mallory@smoke.test"} and code = ${"EVECODE1"}`;
+  check("roster mode: exact (event,email,code) triple passes", triple.length === 1);
+  check("roster mode: right code + wrong email fails", mismatched.length === 0);
+
+  // The check constraint is the last line of defense on mode values.
+  let rejected = false;
+  try {
+    await sql`insert into events (id, name, access_mode)
+              values (${id()}, ${"Bad Con"}, 'vip')`;
+  } catch {
+    rejected = true;
+  }
+  check("invalid access_mode rejected by check constraint", rejected);
 } catch (err) {
   ok = false;
   console.error("SMOKE ERROR:", err.message);
 } finally {
   // Cascade wipes profiles/intents/connections/messages with the event.
-  await sql`delete from events where id = ${eventId}`;
+  await sql`delete from events where id in (${eventId}, ${openEventId}, ${codeEventId})`;
   const leftovers = await sql`
     select count(*)::int as n from profiles where event_id = ${eventId}`;
   check("cascade cleanup leaves nothing behind", leftovers[0].n === 0);

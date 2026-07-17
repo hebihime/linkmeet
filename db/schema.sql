@@ -8,11 +8,23 @@ create table if not exists events (
   id          text primary key,               -- url slug, e.g. "himss-2026"
   name        text not null,
   starts_at   timestamptz not null default now(), -- deck unlocks at/after this
+  logo_url    text,                            -- shown in the /  finder carousel
+  -- how attendees get in:
+  --   'open'   -> email only, no gate
+  --   'code'   -> one shared join_code, distributed out-of-band (venue signage)
+  --   'roster' -> per-person access_codes, emailed (the default / legacy path)
+  access_mode text not null default 'roster'
+                check (access_mode in ('open','code','roster')),
+  join_code   text,                            -- set only when access_mode = 'code'
   created_at  timestamptz not null default now()
 );
 alter table events add column if not exists starts_at timestamptz not null default now();
+alter table events add column if not exists logo_url text;
+alter table events add column if not exists access_mode text not null default 'roster'
+  check (access_mode in ('open','code','roster'));
+alter table events add column if not exists join_code text;
 
--- Pre-bound: organizer supplies emails; we generate one code per email.
+-- Roster mode only: organizer supplies emails; we generate one code per email.
 -- Login requires the exact (event_id, email, code) triple. A leaked code is
 -- useless without its matching email.
 create table if not exists access_codes (

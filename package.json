@@ -7,10 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "migrate": "node --env-file=.env.local scripts/migrate.mjs",
-    "smoke": "node --env-file=.env.local scripts/smoke.mjs",
-    "smoke:live": "node --env-file=.env.local scripts/e2e-live.mjs",
-    "smoke:golden": "node --env-file=.env.local scripts/golden-path.mjs"
+    "migrate": "node --network-family-autoselection-attempt-timeout=3000 --env-file=.env.local scripts/migrate.mjs",
+    "smoke": "node --network-family-autoselection-attempt-timeout=3000 --env-file=.env.local scripts/smoke.mjs",
+    "smoke:live": "node --network-family-autoselection-attempt-timeout=3000 --env-file=.env.local scripts/e2e-live.mjs",
+    "smoke:golden": "node --network-family-autoselection-attempt-timeout=3000 --env-file=.env.local scripts/golden-path.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1087.0",
@@ -18,12 +18,14 @@
     "nanoid": "^6.0.0",
     "next": "16.2.10",
     "postgres": "^3.4.9",
+    "qrcode": "^1.5.4",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

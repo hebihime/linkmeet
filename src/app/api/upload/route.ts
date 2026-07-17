@@ -14,12 +14,23 @@ const EXT: Record<string, string> = {
 const MAX_BYTES = 8 * 1024 * 1024;
 
 export async function POST(req: NextRequest) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Not authorized" }, { status: 401 });
+  const form = await req.formData();
+  const kind = form.get("kind");
+
+  // kind=logo comes from /new, which is (deliberately) ungated and runs
+  // before any event or session exists — so no session check there.
+  // Everything else is a profile photo and stays session-gated.
+  let key: string;
+  if (kind === "logo") {
+    key = `events/logos/${newId()}`;
+  } else {
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json({ error: "Not authorized" }, { status: 401 });
+    }
+    key = `profiles/${session.eventId}/${newId()}`;
   }
 
-  const form = await req.formData();
   const file = form.get("file");
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
@@ -36,7 +47,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Image must be under 8MB" }, { status: 400 });
   }
 
-  const key = `profiles/${session.eventId}/${newId()}.${ext}`;
+  key = `${key}.${ext}`;
   const body = Buffer.from(await file.arrayBuffer());
 
   try {

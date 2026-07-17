@@ -1,10 +1,15 @@
 import { sql } from "./db";
+import type { AccessMode } from "./actions";
 
 export type EventRow = {
   id: string;
   name: string;
   starts_at: Date;
   live: boolean; // starts_at <= now(), evaluated on the DB clock
+  access_mode: AccessMode;
+  logo_url: string | null;
+  // NOTE: join_code is deliberately absent — EventRow flows to client
+  // components (LoginForm) and the shared code must never leave the server.
 };
 
 export type Card = {
@@ -19,9 +24,24 @@ export type Profile = Card & { solo: boolean };
 
 export async function getEvent(eventId: string) {
   const rows = await sql`
-    select id, name, starts_at, starts_at <= now() as live
+    select id, name, starts_at, starts_at <= now() as live,
+           access_mode, logo_url
     from events where id = ${eventId} limit 1`;
   return rows[0] as EventRow | undefined;
+}
+
+export type EventListItem = {
+  id: string;
+  name: string;
+  logo_url: string | null;
+};
+
+// The public finder carousel: every event, name + logo only. Listing is not
+// access — each event still enforces its own gate at login.
+export async function listEvents(): Promise<EventListItem[]> {
+  const rows = await sql`
+    select id, name, logo_url from events order by created_at desc`;
+  return rows as unknown as EventListItem[];
 }
 
 export async function getProfile(profileId: string) {

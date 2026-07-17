@@ -27,5 +27,11 @@ export default async function EventEntry({
     redirect(`/${eventId}/explore`);
   }
 
-  return <LoginForm eventId={eventId} eventName={event.name} />;
+  return (
+    <LoginForm
+      eventId={eventId}
+      eventName={event.name}
+      accessMode={event.access_mode}
+    />
+  );
 }

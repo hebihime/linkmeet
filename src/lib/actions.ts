@@ -7,61 +7,94 @@ import { makeEventId, newId, newCode, normalizeEmail } from "./ids";
 import { getDeckCards, getMessages, type Card, type Message } from "./queries";
 import { seedTestUsers, seedTestRequests, testUserReply } from "./seed";
 
-// ---- Create event + pre-bound codes ---------------------------------------
+// ---- Create event (three access modes) ------------------------------------
+
+export type AccessMode = "open" | "code" | "roster";
+
+export type CreateEventInput = {
+  name: string;
+  startsAtIso: string;
+  accessMode: AccessMode;
+  logoUrl?: string | null; // finder carousel logo; null -> initials placeholder
+  joinCode?: string; // 'code' mode; blank -> auto-generate
+  emails?: string; // 'roster' mode; newline/comma separated
+  seedCount?: number; // test attendees, clamped 1–50, 0 = none
+};
 
 export type CreatedEvent = {
   eventId: string;
   name: string;
-  codes: { email: string; code: string }[];
+  accessMode: AccessMode;
+  logoUrl: string | null;
+  joinCode: string | null; // 'code' mode only — shown ONCE on the success screen
+  codes: { email: string; code: string }[]; // 'roster' mode only
 };
 
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
 export async function createEvent(
-  name: string,
-  startsAtIso: string,
-  emailsRaw: string,
-  seedCount = 0,
+  input: CreateEventInput,
 ): Promise<{ error: string } | CreatedEvent> {
-  const cleanName = name.trim();
+  const cleanName = input.name.trim();
   if (!cleanName) return { error: "Event name is required." };
 
-  const startsAt = new Date(startsAtIso);
+  const startsAt = new Date(input.startsAtIso);
   if (isNaN(startsAt.getTime()))
     return { error: "Pick a valid start date & time." };
 
-  const emails = Array.from(
-    new Set(
-      emailsRaw
-        .split(/[\n,;]+/)
-        .map(normalizeEmail)
-        .filter((e) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)),
-    ),
-  );
-  if (emails.length === 0)
-    return { error: "Add at least one valid attendee email." };
+  const accessMode: AccessMode = ["open", "code", "roster"].includes(
+    input.accessMode,
+  )
+    ? input.accessMode
+    : "roster";
+  const logoUrl = input.logoUrl?.trim() || null;
+
+  // Roster: parse emails up front so a bad list never creates a half-event.
+  let emails: string[] = [];
+  if (accessMode === "roster") {
+    emails = Array.from(
+      new Set(
+        (input.emails ?? "")
+          .split(/[\n,;]+/)
+          .map(normalizeEmail)
+          .filter((e) => EMAIL_RE.test(e)),
+      ),
+    );
+    if (emails.length === 0)
+      return { error: "Add at least one valid attendee email." };
+  }
+
+  const joinCode =
+    accessMode === "code"
+      ? input.joinCode?.trim().toUpperCase() || newCode()
+      : null;
 
   const eventId = makeEventId(cleanName);
   await sql`
-    insert into events (id, name, starts_at)
-    values (${eventId}, ${cleanName}, ${startsAt})`;
+    insert into events (id, name, starts_at, logo_url, access_mode, join_code)
+    values (${eventId}, ${cleanName}, ${startsAt}, ${logoUrl}, ${accessMode}, ${joinCode})`;
 
   const codes = emails.map((email) => ({ email, code: newCode() }));
-  await sql`
-    insert into access_codes ${sql(
-      codes.map((c) => ({
-        id: newId(),
-        event_id: eventId,
-        email: c.email,
-        code: c.code,
-      })),
-    )}
-  `;
+  if (codes.length > 0) {
+    await sql`
+      insert into access_codes ${sql(
+        codes.map((c) => ({
+          id: newId(),
+          event_id: eventId,
+          email: c.email,
+          code: c.code,
+        })),
+      )}
+    `;
+  }
 
-  if (seedCount > 0) await seedTestUsers(eventId, seedCount);
+  const seedCount = input.seedCount ?? 0;
+  if (seedCount > 0) await seedTestUsers(eventId, Math.min(50, seedCount));
 
-  return { eventId, name: cleanName, codes };
+  return { eventId, name: cleanName, accessMode, logoUrl, joinCode, codes };
 }
 
-// ---- Login (email + pre-bound code) ---------------------------------------
+// ---- Login (mode-aware gate; email is always the identity key) -------------
 
 export async function login(
   eventId: string,
@@ -70,17 +103,32 @@ export async function login(
 ): Promise<{ error: string } | { ok: true; hasProfile: boolean }> {
   const email = normalizeEmail(emailRaw);
   const code = codeRaw.trim().toUpperCase();
-  if (!email || !code) return { error: "Enter your email and code." };
+  if (!EMAIL_RE.test(email)) return { error: "Enter a valid email address." };
 
-  const rows = await sql`
-    select id, claimed_at from access_codes
-    where event_id = ${eventId} and email = ${email} and code = ${code}
-    limit 1`;
-  if (rows.length === 0)
-    return { error: "That email and code don't match for this event." };
+  // join_code is read server-side ONLY — it must never reach a client.
+  const eventRows = await sql`
+    select access_mode, join_code from events where id = ${eventId} limit 1`;
+  const event = eventRows[0];
+  if (!event) return { error: "This event doesn't exist." };
 
-  if (!rows[0].claimed_at) {
-    await sql`update access_codes set claimed_at = now() where id = ${rows[0].id}`;
+  if (event.access_mode === "open") {
+    // No gate — the email IS the identity.
+  } else if (event.access_mode === "code") {
+    if (!code) return { error: "Enter the event code." };
+    if (code !== (event.join_code as string | null)?.toUpperCase())
+      return { error: "That event code isn't right." };
+  } else {
+    // roster: the exact (event, email, code) triple, claimed once.
+    if (!code) return { error: "Enter your email and code." };
+    const rows = await sql`
+      select id, claimed_at from access_codes
+      where event_id = ${eventId} and email = ${email} and code = ${code}
+      limit 1`;
+    if (rows.length === 0)
+      return { error: "That email and code don't match for this event." };
+    if (!rows[0].claimed_at) {
+      await sql`update access_codes set claimed_at = now() where id = ${rows[0].id}`;
+    }
   }
 
   const existing = await sql`
