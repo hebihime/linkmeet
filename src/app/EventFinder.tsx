@@ -22,73 +22,55 @@ export default function EventFinder({ events }: { events: EventListItem[] }) {
     : events;
 
   return (
-    <div className="flex flex-col gap-8">
-      {/* Step 1 — find your event's link */}
-      <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-widest text-neutral-500">
-          Step 1 · Link
-        </h2>
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search for your event…"
-          aria-label="Search for your event"
-          className="rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-3 outline-none focus:border-neutral-400"
-        />
+    <div className="flex flex-col gap-4">
+      <input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search for your event"
+        aria-label="Search for your event"
+        className="rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-3 outline-none focus:border-neutral-400"
+      />
 
-        {events.length === 0 ? (
-          <p className="py-6 text-center text-sm text-neutral-500">
-            No events yet.
-          </p>
-        ) : matches.length === 0 ? (
-          <p className="py-6 text-center text-sm text-neutral-500">
-            No events match &lsquo;{query.trim()}&rsquo;
-          </p>
-        ) : (
-          <div
-            className="-mx-6 flex snap-x snap-mandatory gap-3 overflow-x-auto px-6 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-            role="list"
-            aria-label="Events"
-          >
-            {matches.map((e) => (
-              <Link
-                key={e.id}
-                href={`/${e.id}`}
-                role="listitem"
-                className="flex w-28 shrink-0 snap-start flex-col items-center gap-2"
-              >
-                {e.logo_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={e.logo_url}
-                    alt=""
-                    className="h-28 w-28 rounded-2xl border border-neutral-800 bg-neutral-900 object-cover transition hover:border-neutral-600"
-                  />
-                ) : (
-                  <div className="flex h-28 w-28 items-center justify-center rounded-2xl border border-neutral-800 bg-gradient-to-br from-indigo-500 to-fuchsia-500 text-3xl font-bold text-white">
-                    {initials(e.name)}
-                  </div>
-                )}
-                <span className="line-clamp-2 w-full text-center text-xs leading-tight text-neutral-300">
-                  {e.name}
-                </span>
-              </Link>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* Step 2 — once you're in, the deck does the rest */}
-      <section className="flex flex-col gap-1">
-        <h2 className="text-sm font-semibold uppercase tracking-widest text-neutral-500">
-          Step 2 · Meet
-        </h2>
-        <p className="text-neutral-300">Tap in and start swiping.</p>
-        <p className="text-sm text-neutral-500">
-          Meet, Link, or Invite the people around you — async, rejection-safe,
-          and gone when the event ends.
+      {events.length === 0 ? (
+        <p className="py-6 text-center text-sm text-neutral-500">
+          No events yet.
         </p>
-      </section>
+      ) : matches.length === 0 ? (
+        <p className="py-6 text-center text-sm text-neutral-500">
+          No events match &lsquo;{query.trim()}&rsquo;
+        </p>
+      ) : (
+        <div
+          className="-mx-6 flex snap-x snap-mandatory gap-4 overflow-x-auto px-6 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          role="list"
+          aria-label="Events"
+        >
+          {matches.map((e) => (
+            <Link
+              key={e.id}
+              href={`/${e.id}`}
+              role="listitem"
+              className="group flex w-64 shrink-0 snap-start flex-col overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900 transition hover:border-neutral-600"
+            >
+              {e.logo_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={e.logo_url}
+                  alt=""
+                  className="aspect-[4/3] w-full object-cover"
+                />
+              ) : (
+                <div className="flex aspect-[4/3] w-full items-center justify-center bg-gradient-to-br from-indigo-500 to-fuchsia-500 text-5xl font-bold text-white">
+                  {initials(e.name)}
+                </div>
+              )}
+              <span className="line-clamp-2 px-4 py-3 text-center text-base font-medium leading-tight text-neutral-200">
+                {e.name}
+              </span>
+            </Link>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
