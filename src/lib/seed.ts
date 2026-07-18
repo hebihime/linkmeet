@@ -30,6 +30,12 @@ const TAGS = [
   "robotics", "biotech", "VC", "design", "gaming", "sushi", "chess", "surfing",
 ];
 
+const COMPANIES = [
+  "Stripe", "Neuralink", "Mayo Clinic", "Anduril", "Figma", "Moderna",
+  "Palantir", "Shopify", "Boston Dynamics", "Datadog", "Epic Systems",
+  "Rivian",
+];
+
 const REPLIES = [
   "Hey! Glad this went through — where are you right now?",
   "Oh nice, was hoping you'd reach out. Coffee near the main hall?",
@@ -58,6 +64,12 @@ export async function seedTestUsers(eventId: string, count: number) {
     const id = newId();
     const name = names[i % names.length] + (i >= names.length ? ` ${i}` : "");
     const tags = shuffle(TAGS).slice(0, 2 + Math.floor(Math.random() * 3));
+    // 1–3 photos so the profile-view carousel has something to swipe.
+    const photos = Array.from(
+      { length: 1 + Math.floor(Math.random() * 3) },
+      (_, p) => `https://i.pravatar.cc/400?u=${id}-${p}`,
+    );
+    const genders = ["man", "woman", "nonbinary", null];
     return {
       id,
       event_id: eventId,
@@ -65,8 +77,18 @@ export async function seedTestUsers(eventId: string, count: number) {
       name,
       headline: HEADLINES[Math.floor(Math.random() * HEADLINES.length)],
       tags,
-      photo_url: `https://i.pravatar.cc/400?u=${id}`,
+      photo_url: photos[0],
+      photos,
       solo: Math.random() < 0.4,
+      birth_year:
+        Math.random() < 0.85
+          ? 1968 + Math.floor(Math.random() * 38) // ages ~20–58
+          : null,
+      gender: genders[Math.floor(Math.random() * genders.length)],
+      company:
+        Math.random() < 0.7
+          ? COMPANIES[Math.floor(Math.random() * COMPANIES.length)]
+          : null,
       is_test: true,
     };
   });

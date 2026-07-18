@@ -1,5 +1,6 @@
 import { sql } from "./db";
 import type { AccessMode } from "./actions";
+import { DEFAULT_FILTERS, type DeckFilters } from "./filters";
 
 export type EventRow = {
   id: string;
@@ -17,10 +18,16 @@ export type Card = {
   name: string;
   headline: string | null;
   tags: string[];
-  photo_url: string | null;
+  photo_url: string | null; // denormalized cover = photos[0]
+  photos: string[]; // full gallery, shown in the profile view
 };
 
-export type Profile = Card & { solo: boolean };
+export type Profile = Card & {
+  solo: boolean;
+  birth_year: number | null;
+  gender: string | null;
+  company: string | null;
+};
 
 export async function getEvent(eventId: string) {
   const rows = await sql`
@@ -46,7 +53,8 @@ export async function listEvents(): Promise<EventListItem[]> {
 
 export async function getProfile(profileId: string) {
   const rows = await sql`
-    select id, name, headline, tags, photo_url, solo
+    select id, name, headline, tags, photo_url, photos, solo,
+           birth_year, gender, company
     from profiles where id = ${profileId} limit 1`;
   return rows[0] as Profile | undefined;
 }
@@ -62,9 +70,17 @@ export async function getDeckCards(
   me: string,
   exclude: string[],
   limit = 12,
+  filters?: DeckFilters,
 ): Promise<Card[]> {
+  const f = { ...DEFAULT_FILTERS, ...filters };
+  const hasAge = f.ageMin != null || f.ageMax != null;
+  // show_me maps onto stored gender values; 'nonbinary' only surfaces under
+  // 'everyone', and nulls ride the include-unspecified toggle.
+  const wantGender =
+    f.showMe === "men" ? "man" : f.showMe === "women" ? "woman" : null;
+  const companyQ = f.company.trim();
   const rows = await sql`
-    select p.id, p.name, p.headline, p.tags, p.photo_url
+    select p.id, p.name, p.headline, p.tags, p.photo_url, p.photos
     from profiles p
     where p.event_id = ${eventId}
       and p.id <> ${me}
@@ -78,6 +94,20 @@ export async function getDeckCards(
         where (c.profile_a = ${me} and c.profile_b = p.id)
            or (c.profile_b = ${me} and c.profile_a = p.id)
       )
+      and (${f.tags.length === 0} or p.tags && ${f.tags})
+      and (${!f.soloOnly} or p.solo)
+      and (${!f.hasPhoto} or p.photo_url is not null)
+      and (${!hasAge}
+        or (p.birth_year is not null
+            and p.birth_year <= extract(year from now()) - ${f.ageMin ?? 0}
+            and p.birth_year >= extract(year from now()) - ${f.ageMax ?? 150})
+        or (${f.ageUnspecified} and p.birth_year is null))
+      and (${wantGender === null}
+        or p.gender = ${wantGender ?? ""}
+        or (${f.genderUnspecified} and p.gender is null))
+      and (${companyQ === ""}
+        or (p.company is not null and p.company ilike ${"%" + companyQ + "%"})
+        or (${f.companyUnspecified} and p.company is null))
     order by (
       select count(*)
       from unnest(p.tags) as t(tag)
@@ -85,6 +115,19 @@ export async function getDeckCards(
     ) desc, random()
     limit ${limit}`;
   return rows as unknown as Card[];
+}
+
+// Tag options for the filters modal: every tag in use at this event, most
+// common first, capped so the modal stays scannable.
+export async function getEventTags(eventId: string): Promise<string[]> {
+  const rows = await sql`
+    select t.tag as tag, count(*)::int as n
+    from profiles p, unnest(p.tags) as t(tag)
+    where p.event_id = ${eventId}
+    group by t.tag
+    order by n desc, tag asc
+    limit 30`;
+  return rows.map((r) => r.tag as string);
 }
 
 export type ExploreStats = {
@@ -135,7 +178,7 @@ export async function getRequests(
 ): Promise<RequestItem[]> {
   const rows = await sql`
     select i.id, i.kind, i.created_at,
-           p.id as sender_id, p.name, p.headline, p.tags, p.photo_url
+           p.id as sender_id, p.name, p.headline, p.tags, p.photo_url, p.photos
     from intents i
     join profiles p on p.id = i.from_id
     where i.event_id = ${eventId} and i.to_id = ${me}
@@ -151,6 +194,7 @@ export async function getRequests(
       headline: (r.headline as string | null) ?? null,
       tags: (r.tags as string[]) ?? [],
       photo_url: (r.photo_url as string | null) ?? null,
+      photos: (r.photos as string[]) ?? [],
     },
   }));
 }
@@ -227,7 +271,7 @@ export async function getConnection(
     select c.id, c.event_id, c.origin, c.profile_a, c.profile_b,
            c.met_a, c.met_b, c.met_confirmed_at,
            p.id as other_id, p.name as other_name, p.headline as other_headline,
-           p.tags as other_tags, p.photo_url as other_photo
+           p.tags as other_tags, p.photo_url as other_photo, p.photos as other_photos
     from connections c
     join profiles p
       on p.id = case when c.profile_a = ${me} then c.profile_b else c.profile_a end
@@ -247,6 +291,7 @@ export async function getConnection(
       headline: (r.other_headline as string | null) ?? null,
       tags: (r.other_tags as string[]) ?? [],
       photo_url: (r.other_photo as string | null) ?? null,
+      photos: (r.other_photos as string[]) ?? [],
     },
     iMet: (amA ? r.met_a : r.met_b) as boolean,
     theyMet: (amA ? r.met_b : r.met_a) as boolean,

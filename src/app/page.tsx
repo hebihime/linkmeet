@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { listEvents } from "@/lib/queries";
 import EventFinder from "./EventFinder";
 
@@ -19,9 +20,9 @@ export default async function Home() {
         </p>
         <p className="mt-4 text-sm text-neutral-600">
           Organizing an event?{" "}
-          <a href="/new" className="text-neutral-500 underline-offset-2 hover:text-neutral-300 hover:underline">
+          <Link href="/new" className="text-neutral-500 underline-offset-2 hover:text-neutral-300 hover:underline">
             Create your link →
-          </a>
+          </Link>
         </p>
       </div>
 

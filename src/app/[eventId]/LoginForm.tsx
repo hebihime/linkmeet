@@ -44,11 +44,13 @@ export default function LoginForm({
   eventName,
   accessMode,
   logoUrl,
+  live,
 }: {
   eventId: string;
   eventName: string;
   accessMode: AccessMode;
   logoUrl: string | null;
+  live: boolean;
 }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -65,7 +67,11 @@ export default function LoginForm({
         setError(res.error);
         return;
       }
-      router.push(`/${eventId}/${res.hasProfile ? "explore" : "profile"}`);
+      // Existing profile lands on the deck when it's open, Explore otherwise;
+      // first-timers set up their profile before anything else.
+      router.push(
+        `/${eventId}/${res.hasProfile ? (live ? "connect" : "explore") : "profile"}`,
+      );
     });
   }
 

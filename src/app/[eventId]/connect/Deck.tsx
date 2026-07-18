@@ -15,6 +15,15 @@ import {
   type IntentKind,
 } from "@/lib/actions";
 import type { Card } from "@/lib/queries";
+import {
+  DEFAULT_FILTERS,
+  activeFilterCount,
+  loadFilters,
+  saveFilters,
+  type DeckFilters,
+} from "@/lib/filters";
+import ProfileView from "./ProfileView";
+import FiltersModal from "./FiltersModal";
 
 type Dir = "up" | "right" | "down" | "left";
 
@@ -29,6 +38,8 @@ const COMMIT_DIST = 110; // px of drag that commits a swipe
 const COMMIT_VEL = 0.55; // px/ms fling velocity that commits a swipe
 const FLY_MS = 180; // fly-off animation
 const REFILL_AT = 4; // fetch more when the queue gets this short
+const TAP_DIST = 8; // px — under this, a pointerup is a tap, not a swipe
+const TAP_MS = 400; // ms — a press longer than this is never a tap
 
 function initials(name: string) {
   return name
@@ -43,13 +54,18 @@ function initials(name: string) {
 export default function Deck({
   eventId,
   initialCards,
+  availableTags,
 }: {
   eventId: string;
   initialCards: Card[];
+  availableTags: string[];
 }) {
   const [stack, setStack] = useState<Card[]>(initialCards);
   const [celebration, setCelebration] = useState<Celebration | null>(null);
   const [composer, setComposer] = useState<Card | null>(null);
+  const [viewing, setViewing] = useState<Card | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filters, setFilters] = useState<DeckFilters>(DEFAULT_FILTERS);
   const [drained, setDrained] = useState(initialCards.length === 0);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -70,20 +86,27 @@ export default function Deck({
     vx: 0,
     vy: 0,
     t: 0,
+    t0: 0,
   });
   const seenRef = useRef<Set<string>>(new Set(initialCards.map((c) => c.id)));
   const fetchingRef = useRef(false);
   // Mirror of `stack` for event handlers; updated at every mutation site
   // (advance/refill) rather than during render.
   const stackRef = useRef(initialCards);
+  // Mirror of `filters` for refill; bumping the generation invalidates any
+  // fetch that was in flight when the filters changed.
+  const filtersRef = useRef<DeckFilters>(DEFAULT_FILTERS);
+  const filterGenRef = useRef(0);
 
   // ---- queue management ------------------------------------------------------
 
   const refill = useCallback(() => {
     if (fetchingRef.current) return;
     fetchingRef.current = true;
-    fetchMoreCards([...seenRef.current])
+    const gen = filterGenRef.current;
+    fetchMoreCards([...seenRef.current], filtersRef.current)
       .then((more) => {
+        if (gen !== filterGenRef.current) return; // stale filter generation
         const fresh = more.filter((c) => !seenRef.current.has(c.id));
         fresh.forEach((c) => seenRef.current.add(c.id));
         if (fresh.length > 0) {
@@ -99,6 +122,40 @@ export default function Deck({
         fetchingRef.current = false;
       });
   }, []);
+
+  // A filter change throws away the whole hand and deals fresh from the
+  // server — the client stack can't be filtered locally without draining it.
+  const applyFilters = useCallback(
+    (f: DeckFilters) => {
+      filtersRef.current = f;
+      filterGenRef.current++;
+      setFilters(f);
+      saveFilters(eventId, f);
+      seenRef.current = new Set();
+      stackRef.current = [];
+      setStack([]);
+      setDrained(false);
+      setFiltersOpen(false);
+      refill();
+    },
+    [eventId, refill],
+  );
+
+  // Rehydrate saved filters. The server dealt an unfiltered hand; if the
+  // saved filters actually narrow anything, redeal through them.
+  useEffect(() => {
+    // Must run post-hydration: localStorage doesn't exist during SSR, so the
+    // first render is always unfiltered and the saved filters land here.
+    const saved = loadFilters(eventId);
+    if (activeFilterCount(saved) > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      applyFilters(saved);
+    } else {
+      filtersRef.current = saved;
+      setFilters(saved);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventId]);
 
   const advance = useCallback(
     (card: Card, dir: Dir, extra?: { message: string; photoUrl?: string }) => {
@@ -183,11 +240,12 @@ export default function Deck({
   }, [setOverlays]);
 
   function onPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
-    if (composer || celebration) return;
+    if (composer || celebration || viewing || filtersOpen) return;
     const el = topRef.current;
     if (!el) return;
     el.setPointerCapture(e.pointerId);
     el.style.transition = "none";
+    const now = performance.now();
     drag.current = {
       active: true,
       pointerId: e.pointerId,
@@ -197,7 +255,8 @@ export default function Deck({
       dy: 0,
       vx: 0,
       vy: 0,
-      t: performance.now(),
+      t: now,
+      t0: now,
     };
   }
 
@@ -229,6 +288,16 @@ export default function Deck({
     const card = stackRef.current[0];
     if (!card) return;
 
+    // A short, still press is a tap — open the full profile.
+    if (
+      Math.hypot(d.dx, d.dy) < TAP_DIST &&
+      performance.now() - d.t0 < TAP_MS
+    ) {
+      springBack();
+      setViewing(card);
+      return;
+    }
+
     const { dx, dy, vx, vy } = d;
     const horizontal = Math.abs(dx) >= Math.abs(dy);
     let dir: Dir | null = null;
@@ -252,19 +321,21 @@ export default function Deck({
     }
   }
 
-  // Buttons + keyboard drive the identical commit path as gestures.
+  // ProfileView buttons + keyboard drive the identical commit path as
+  // gestures. Acting from the profile view closes it.
   const act = useCallback(
     (dir: Dir) => {
-      if (composer || celebration) return;
+      if (composer || celebration || filtersOpen) return;
       const card = stackRef.current[0];
       if (!card) return;
+      setViewing(null);
       if (dir === "down") {
         setComposer(card);
         return;
       }
       flyOff(dir, card);
     },
-    [composer, celebration, flyOff],
+    [composer, celebration, filtersOpen, flyOff],
   );
 
   useEffect(() => {
@@ -394,7 +465,21 @@ export default function Deck({
 
   return (
     <main className="mx-auto flex h-dvh w-full max-w-md flex-col px-5 pb-24 pt-4">
-      <header className="mb-3 text-center text-xs font-semibold uppercase tracking-widest text-neutral-600">
+      <header className="relative mb-3 flex items-center justify-center text-xs font-semibold uppercase tracking-widest text-neutral-600">
+        <button
+          onClick={() => setFiltersOpen(true)}
+          aria-label="Deck filters"
+          className="absolute left-0 flex h-8 w-8 items-center justify-center rounded-full text-neutral-400 transition hover:text-white"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5">
+            <path d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+          {activeFilterCount(filters) > 0 && (
+            <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-fuchsia-500 px-1 text-[10px] font-bold text-white">
+              {activeFilterCount(filters)}
+            </span>
+          )}
+        </button>
         Connect
       </header>
 
@@ -422,6 +507,23 @@ export default function Deck({
           </div>
         )}
       </div>
+
+      {viewing && (
+        <ProfileView
+          card={viewing}
+          onClose={() => setViewing(null)}
+          onAct={act}
+        />
+      )}
+
+      {filtersOpen && (
+        <FiltersModal
+          filters={filters}
+          availableTags={availableTags}
+          onApply={applyFilters}
+          onClose={() => setFiltersOpen(false)}
+        />
+      )}
 
       {composer && (
         <InviteComposer

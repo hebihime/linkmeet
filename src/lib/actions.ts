@@ -5,6 +5,7 @@ import { sql } from "./db";
 import { getSession, setSession, type Session } from "./session";
 import { makeEventId, newId, newCode, normalizeEmail } from "./ids";
 import { getDeckCards, getMessages, type Card, type Message } from "./queries";
+import type { DeckFilters } from "./filters";
 import { seedTestUsers, seedTestRequests, testUserReply } from "./seed";
 
 // ---- Create event (three access modes) ------------------------------------
@@ -147,7 +148,6 @@ export async function saveProfile(formData: FormData) {
 
   const name = String(formData.get("name") ?? "").trim();
   const headline = String(formData.get("headline") ?? "").trim() || null;
-  const photo_url = String(formData.get("photo_url") ?? "").trim() || null;
   const solo = formData.get("solo") === "on";
   const tags = String(formData.get("tags") ?? "")
     .split(",")
@@ -155,19 +155,49 @@ export async function saveProfile(formData: FormData) {
     .filter(Boolean)
     .slice(0, 8);
 
+  // photos arrives as a JSON array from PhotoField; photo_url is derived, not
+  // user-supplied — it's the denormalized cover every card/list reads.
+  let photos: string[] = [];
+  try {
+    const parsed = JSON.parse(String(formData.get("photos") ?? "[]"));
+    if (Array.isArray(parsed))
+      photos = parsed
+        .filter((p): p is string => typeof p === "string" && /^https?:\/\//.test(p))
+        .slice(0, 6);
+  } catch {
+    // malformed payload -> no photos
+  }
+  const photo_url = photos[0] ?? null;
+
+  const birthYearRaw = parseInt(String(formData.get("birth_year") ?? ""), 10);
+  const nowYear = new Date().getFullYear();
+  const birth_year =
+    birthYearRaw >= 1900 && birthYearRaw <= nowYear - 10 ? birthYearRaw : null;
+
+  const genderRaw = String(formData.get("gender") ?? "");
+  const gender = ["man", "woman", "nonbinary"].includes(genderRaw)
+    ? genderRaw
+    : null;
+
+  const company = String(formData.get("company") ?? "").trim() || null;
+
   if (!name) return; // name is required; the form enforces it client-side too
 
   const isFirstProfile = !session.profileId;
 
   const rows = await sql`
-    insert into profiles (id, event_id, email, name, headline, tags, photo_url, solo)
-    values (${newId()}, ${session.eventId}, ${session.email}, ${name}, ${headline}, ${tags}, ${photo_url}, ${solo})
+    insert into profiles (id, event_id, email, name, headline, tags, photo_url, photos, solo, birth_year, gender, company)
+    values (${newId()}, ${session.eventId}, ${session.email}, ${name}, ${headline}, ${tags}, ${photo_url}, ${photos}, ${solo}, ${birth_year}, ${gender}, ${company})
     on conflict (event_id, email) do update
       set name = excluded.name,
           headline = excluded.headline,
           tags = excluded.tags,
           photo_url = excluded.photo_url,
-          solo = excluded.solo
+          photos = excluded.photos,
+          solo = excluded.solo,
+          birth_year = excluded.birth_year,
+          gender = excluded.gender,
+          company = excluded.company
     returning id`;
 
   const profileId = rows[0].id as string;
@@ -177,7 +207,14 @@ export async function saveProfile(formData: FormData) {
   if (isFirstProfile) await seedTestRequests(session.eventId, profileId);
 
   await setSession({ ...session, profileId });
-  redirect(`/${session.eventId}/explore`);
+
+  // Land where the app lands: Connect when it's live, Explore (countdown)
+  // when it isn't.
+  const liveRows = await sql`
+    select starts_at <= now() as live from events where id = ${session.eventId} limit 1`;
+  redirect(
+    `/${session.eventId}/${liveRows[0]?.live ? "connect" : "explore"}`,
+  );
 }
 
 // ---- The async request/accept model ----------------------------------------
@@ -317,11 +354,15 @@ export async function sendIntent(input: {
   return { celebration };
 }
 
-// Background refill for the deck's prefetch queue.
-export async function fetchMoreCards(exclude: string[]): Promise<Card[]> {
+// Background refill for the deck's prefetch queue. Filters ride along so
+// pagination stays consistent with what the client is showing.
+export async function fetchMoreCards(
+  exclude: string[],
+  filters?: DeckFilters,
+): Promise<Card[]> {
   const session = await requireProfile();
   if (!session) return [];
-  return getDeckCards(session.eventId, session.profileId, exclude, 12);
+  return getDeckCards(session.eventId, session.profileId, exclude, 12, filters);
 }
 
 // ---- Requests inbox ---------------------------------------------------------

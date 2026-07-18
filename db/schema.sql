@@ -52,6 +52,16 @@ create table if not exists profiles (
 );
 alter table profiles add column if not exists solo boolean not null default false;
 alter table profiles add column if not exists is_test boolean not null default false;
+-- Deck v2: photos[] is the full gallery; photo_url stays as the denormalized
+-- cover (= photos[1]) so cards/chats/requests keep one cheap column.
+alter table profiles add column if not exists photos text[] not null default '{}';
+alter table profiles add column if not exists birth_year int;      -- year only, not DOB — enough for an age range
+alter table profiles add column if not exists gender text;         -- 'man' | 'woman' | 'nonbinary' | null
+alter table profiles add column if not exists show_me text not null default 'everyone'
+  check (show_me in ('men','women','everyone'));
+alter table profiles add column if not exists company text;
+update profiles set photos = array[photo_url]
+  where photo_url is not null and photos = '{}';
 
 -- One row per (from -> to). Records the deck action AND, for non-pass kinds,
 -- the async request lifecycle. 'pass' rows exist only to keep the deck from

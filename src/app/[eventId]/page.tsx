@@ -24,7 +24,8 @@ export default async function EventEntry({
 
   const session = await getSession();
   if (session?.eventId === eventId && session.profileId) {
-    redirect(`/${eventId}/explore`);
+    // Land on the deck when it's open; on Explore (countdown) when it isn't.
+    redirect(`/${eventId}/${event.live ? "connect" : "explore"}`);
   }
 
   return (
@@ -33,6 +34,7 @@ export default async function EventEntry({
       eventName={event.name}
       accessMode={event.access_mode}
       logoUrl={event.logo_url}
+      live={event.live}
     />
   );
 }
