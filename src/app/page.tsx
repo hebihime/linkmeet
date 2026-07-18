@@ -17,16 +17,15 @@ export default async function Home() {
         <p className="mt-3 text-lg text-neutral-300">
           Quick connections for conventions
         </p>
+        <p className="mt-3 text-sm text-neutral-600">
+          Organizing an event?{" "}
+          <a href="/new" className="text-neutral-500 underline-offset-2 hover:text-neutral-300 hover:underline">
+            Create your link →
+          </a>
+        </p>
       </div>
 
       <EventFinder events={events} />
-
-      <p className="text-center text-sm text-neutral-600">
-        Organizing an event?{" "}
-        <a href="/new" className="text-neutral-500 underline-offset-2 hover:text-neutral-300 hover:underline">
-          Create your link →
-        </a>
-      </p>
     </main>
   );
 }
