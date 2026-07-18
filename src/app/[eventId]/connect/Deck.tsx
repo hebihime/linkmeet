@@ -423,38 +423,6 @@ export default function Deck({
         )}
       </div>
 
-      <div className="mt-4 flex items-center justify-center gap-4">
-        <DeckButton label="Pass" onClick={() => act("left")} className="border-neutral-700 text-neutral-300">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="h-6 w-6">
-            <path d="M6 6l12 12M18 6L6 18" />
-          </svg>
-        </DeckButton>
-        <DeckButton label="Invite" onClick={() => act("down")} className="border-amber-500/60 text-amber-300">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-6 w-6">
-            <path d="M12 4v12m0 0l-5-5m5 5l5-5" />
-            <path d="M4 20h16" />
-          </svg>
-        </DeckButton>
-        <DeckButton label="Link" onClick={() => act("right")} className="border-indigo-500/60 text-indigo-300">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-6 w-6">
-            <path d="M9 15l6-6" />
-            <path d="M10.5 6.5l1-1a4 4 0 015.7 5.7l-1 1M13.5 17.5l-1 1a4 4 0 01-5.7-5.7l1-1" />
-          </svg>
-        </DeckButton>
-        <DeckButton
-          label="Meet"
-          onClick={() => act("up")}
-          className="border-transparent bg-gradient-to-br from-indigo-500 to-fuchsia-500 text-white shadow-lg shadow-fuchsia-950/50"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="h-6 w-6">
-            <path d="M12 20V6m0 0l-6 6m6-6l6 6" />
-          </svg>
-        </DeckButton>
-      </div>
-      <p className="mt-2 text-center text-[11px] text-neutral-600">
-        ↑ Meet &nbsp;·&nbsp; → Link &nbsp;·&nbsp; ↓ Invite &nbsp;·&nbsp; ← Pass
-      </p>
-
       {composer && (
         <InviteComposer
           card={composer}
@@ -506,28 +474,6 @@ export default function Deck({
         </div>
       )}
     </main>
-  );
-}
-
-function DeckButton({
-  label,
-  onClick,
-  className,
-  children,
-}: {
-  label: string;
-  onClick: () => void;
-  className: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      aria-label={label}
-      className={`flex h-14 w-14 items-center justify-center rounded-full border transition active:scale-90 ${className}`}
-    >
-      {children}
-    </button>
   );
 }
 
