@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { login, type AccessMode } from "@/lib/actions";
 
@@ -86,6 +87,15 @@ export default function LoginForm({
           </div>
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent" />
+        <Link
+          href="/"
+          aria-label="Back to all events"
+          className="absolute left-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-md transition hover:bg-black/60"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5">
+            <path d="M15 5l-7 7 7 7" />
+          </svg>
+        </Link>
         <div className="absolute inset-x-0 bottom-0 px-6 py-5">
           <p className="text-sm uppercase tracking-widest text-neutral-300">
             LinkMeet
