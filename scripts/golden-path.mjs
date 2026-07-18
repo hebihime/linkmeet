@@ -8,7 +8,9 @@ import postgres from "postgres";
 import { readFileSync } from "node:fs";
 
 const BASE = process.env.BASE_URL ?? "http://localhost:3999";
-const sql = postgres(process.env.DATABASE_URL, { ssl: "require" });
+const sql = postgres(process.env.DATABASE_URL, {
+  ssl: process.env.DATABASE_URL.includes("sslmode=disable") ? false : "require",
+});
 
 let ok = true;
 const check = (label, cond) => {
@@ -106,19 +108,51 @@ try {
     select claimed_at from access_codes where event_id = ${eventId} and email = ${EMAIL}`;
   check("code marked claimed", !!claimed[0].claimed_at);
 
-  // ---- 3. save profile (form action) ------------------------------------------
-  const save = await callFormAction(`/${eventId}/profile`, "saveProfile", {
+  // ---- 3. save profile: 18+ gate + moderation bounce first --------------------
+  const under18 = new Date();
+  under18.setFullYear(under18.getFullYear() - 16);
+  const baseProfile = {
     name: "Golden Tester",
     headline: "Here to verify everything",
     tags: "AI, coffee",
     photos: JSON.stringify(["https://i.pravatar.cc/300?img=68"]),
     solo: "on",
+    birth_date: "1990-06-15",
+    adult: "on",
+  };
+  const bounceMinor = await callFormAction(`/${eventId}/profile`, "saveProfile", {
+    ...baseProfile,
+    birth_date: under18.toISOString().slice(0, 10),
   });
+  check("under-18 DOB bounces (no redirect)", bounceMinor.status !== 303);
+  const bounceAttest = await callFormAction(`/${eventId}/profile`, "saveProfile", {
+    ...baseProfile,
+    adult: "",
+  });
+  check("missing 18+ attestation bounces", bounceAttest.status !== 303);
+  const bounceTag = await callFormAction(`/${eventId}/profile`, "saveProfile", {
+    ...baseProfile,
+    tags: "AI, n4z1",
+  });
+  check("unsafe tag bounces (leetspeak normalized)", bounceTag.status !== 303);
+  const bounceHeadline = await callFormAction(`/${eventId}/profile`, "saveProfile", {
+    ...baseProfile,
+    headline: "Total asshole energy",
+  });
+  check("unsafe headline bounces", bounceHeadline.status !== 303);
+  const noRow = await sql`
+    select 1 from profiles where event_id = ${eventId} and email = ${EMAIL}`;
+  check("bounced saves created no profile row", noRow.length === 0);
+
+  // ---- 3b. clean 18+ save goes through ----------------------------------------
+  const save = await callFormAction(`/${eventId}/profile`, "saveProfile", baseProfile);
   check("saveProfile redirects to explore", save.status === 303);
   const meRow = await sql`
-    select id, solo from profiles where event_id = ${eventId} and email = ${EMAIL}`;
+    select id, solo, birth_date::text as birth_date
+    from profiles where event_id = ${eventId} and email = ${EMAIL}`;
   const me = meRow[0]?.id;
   check("profile row created with solo flag", !!me && meRow[0].solo === true);
+  check("birth_date persisted", meRow[0]?.birth_date === "1990-06-15");
 
   const seededReqs = await sql`
     select from_id from intents where event_id = ${eventId} and to_id = ${me}
@@ -174,7 +208,7 @@ try {
     select 1 from connections where profile_a = ${a2} and profile_b = ${b2}`;
   check("declined request made no connection", noConn.length === 0);
 
-  // ---- 7. chat + mutual "we met" ------------------------------------------------
+  // ---- 7. chat + QR-verified "we met" -----------------------------------------
   await callAction(`/${eventId}/chats/${conn1[0].id}`, "sendMessage", [
     conn1[0].id,
     "meet you at the north bar in 10",
@@ -183,13 +217,82 @@ try {
     select 1 from messages where connection_id = ${conn1[0].id} and sender_id = ${me}`;
   check("sendMessage persists my message", sent.length === 1);
 
-  await callAction(`/${eventId}/chats/${conn1[0].id}`, "markMet", [conn1[0].id]);
+  // Rating before any meet must bounce.
+  await callAction(`/${eventId}/chats/${conn1[0].id}`, "submitRating", [
+    conn1[0].id, true, ["great_conversation"],
+  ]);
+  const earlyRating = await sql`
+    select 1 from ratings where connection_id = ${conn1[0].id}`;
+  check("rating before verified meet is rejected", earlyRating.length === 0);
+
+  // Mint a meet token; the test-user counterparty auto-scans server-side.
+  await callAction(`/${eventId}/chats/${conn1[0].id}`, "mintMeetToken", [
+    conn1[0].id, { lat: 37.7749, lng: -122.4194 },
+  ]);
   const metRow = await sql`
-    select met_confirmed_at from connections where id = ${conn1[0].id}`;
+    select met_confirmed_at, met_method, met_confidence, met_a, met_b
+    from connections where id = ${conn1[0].id}`;
   check(
-    "'we met' confirmed (test user taps back)",
-    !!metRow[0].met_confirmed_at,
+    "QR meet verified (test-user bypass): both flags + confirmed",
+    !!metRow[0].met_confirmed_at && metRow[0].met_a && metRow[0].met_b,
   );
+  check("met_method = 'qr' with a confidence score",
+    metRow[0].met_method === "qr" && metRow[0].met_confidence != null);
+
+  // Verified meet unlocks rating; one per connection.
+  await callAction(`/${eventId}/chats/${conn1[0].id}`, "submitRating", [
+    conn1[0].id, true, ["great_conversation", "not_a_real_key"],
+  ]);
+  const rating = await sql`
+    select endorse, positives, ratee_id from ratings
+    where connection_id = ${conn1[0].id} and rater_id = ${me}`;
+  check(
+    "verified meet unlocks rating (unknown chips dropped)",
+    rating.length === 1 && rating[0].endorse === true &&
+      rating[0].positives.length === 1 && rating[0].ratee_id === freshTester,
+  );
+
+  // ---- 7b. soft honor tap stays cosmetic: confirms, but unlocks nothing -------
+  const [a4, b4] = me < inbox[0].from_id ? [me, inbox[0].from_id] : [inbox[0].from_id, me];
+  const connSoft = await sql`
+    select id from connections where profile_a = ${a4} and profile_b = ${b4}`;
+  await callAction(`/${eventId}/chats/${connSoft[0].id}`, "markMet", [connSoft[0].id]);
+  const softRow = await sql`
+    select met_confirmed_at, met_method from connections where id = ${connSoft[0].id}`;
+  check(
+    "honor tap still confirms (test user taps back) but stays unverified",
+    !!softRow[0].met_confirmed_at && softRow[0].met_method === null,
+  );
+  await callAction(`/${eventId}/chats/${connSoft[0].id}`, "submitRating", [
+    connSoft[0].id, true, [],
+  ]);
+  const softRating = await sql`
+    select 1 from ratings where connection_id = ${connSoft[0].id}`;
+  check("unverified meet does NOT unlock rating", softRating.length === 0);
+
+  // ---- 7c. safety report + auto-suspend threshold ------------------------------
+  // Two prior distinct reporters (seeded directly), then my report crosses the
+  // 3-reporter threshold and auto-suspends pending review.
+  const reporters = testers.map((t) => t.id).filter((t) => t !== freshTester).slice(0, 2);
+  for (const r of reporters) {
+    await sql`
+      insert into safety_reports (id, reporter_id, reported_id, reason)
+      values (${"gp" + Math.random().toString(36).slice(2, 10)}, ${r}, ${freshTester}, 'harassment')`;
+  }
+  await callAction(`/${eventId}/chats/${conn1[0].id}`, "submitSafetyReport", [
+    conn1[0].id, "safety", "golden-path test report",
+  ]);
+  const myReport = await sql`
+    select 1 from safety_reports
+    where connection_id = ${conn1[0].id} and reporter_id = ${me}`;
+  check("safety report persisted", myReport.length === 1);
+  const suspended = await sql`
+    select suspended_at from profiles where id = ${freshTester}`;
+  check("3 distinct reporters auto-suspend the profile", !!suspended[0].suspended_at);
+  const deckAfter = await sql`
+    select 1 from profiles p
+    where p.event_id = ${eventId} and p.id = ${freshTester} and p.suspended_at is null`;
+  check("suspended profile is out of the deck pool", deckAfter.length === 0);
 
   // ---- 8. invite: instant chat with the invite as first message ----------------
   const inviteTarget = inbox[1].from_id; // the silent decliner — invite them anyway?

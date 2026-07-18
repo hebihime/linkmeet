@@ -27,7 +27,9 @@ export default async function ThreadPage({
         iMet: conn.iMet,
         theyMet: conn.theyMet,
         confirmed: !!conn.met_confirmed_at,
+        verified: conn.verified,
       }}
+      initialRated={conn.rated}
     />
   );
 }

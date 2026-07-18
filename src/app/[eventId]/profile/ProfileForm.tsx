@@ -5,6 +5,13 @@ import { saveProfile } from "@/lib/actions";
 import type { Profile } from "@/lib/queries";
 import PhotoField from "./PhotoField";
 
+// Latest selectable DOB — someone whose 18th birthday is today just makes it.
+function eighteenYearsAgo(): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - 18);
+  return d.toISOString().slice(0, 10);
+}
+
 export default function ProfileForm({ existing }: { existing?: Profile }) {
   const [state, formAction, pending] = useActionState(saveProfile, null);
 
@@ -57,19 +64,34 @@ export default function ProfileForm({ existing }: { existing?: Profile }) {
       />
 
       <label className="flex flex-col gap-2 text-sm">
-        <span className="text-neutral-300">
-          Birth year <span className="text-neutral-500">(optional)</span>
-        </span>
+        <span className="text-neutral-300">Date of birth</span>
         <input
-          name="birth_year"
-          type="number"
-          inputMode="numeric"
-          min={1900}
-          max={new Date().getFullYear() - 10}
-          defaultValue={existing?.birth_year ?? ""}
-          placeholder="1990"
-          className="rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-3 outline-none focus:border-neutral-400"
+          name="birth_date"
+          type="date"
+          required
+          max={eighteenYearsAgo()}
+          defaultValue={existing?.birth_date ?? ""}
+          className="rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-3 outline-none [color-scheme:dark] focus:border-neutral-400"
         />
+        <span className="text-xs text-neutral-500">
+          Never shown to anyone — only used to confirm you&apos;re 18+ and for
+          age-range filters.
+        </span>
+      </label>
+
+      <label className="flex items-center gap-3 rounded-lg border border-neutral-800 bg-neutral-900/50 px-4 py-3 text-sm">
+        <input
+          type="checkbox"
+          name="adult"
+          required
+          className="h-4 w-4 accent-fuchsia-500"
+        />
+        <span className="text-neutral-300">
+          I confirm I&apos;m 18 or older
+          <span className="block text-xs text-neutral-500">
+            LinkMeet is for adults only.
+          </span>
+        </span>
       </label>
 
       <label className="flex flex-col gap-2 text-sm">

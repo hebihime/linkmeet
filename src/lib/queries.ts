@@ -24,7 +24,7 @@ export type Card = {
 
 export type Profile = Card & {
   solo: boolean;
-  birth_year: number | null;
+  birth_date: string | null; // "YYYY-MM-DD"; null only on pre-gate rows
   company: string | null;
 };
 
@@ -53,7 +53,7 @@ export async function listEvents(): Promise<EventListItem[]> {
 export async function getProfile(profileId: string) {
   const rows = await sql`
     select id, name, headline, tags, photo_url, photos, solo,
-           birth_year, company
+           birth_date::text as birth_date, company
     from profiles where id = ${profileId} limit 1`;
   return rows[0] as Profile | undefined;
 }
@@ -80,6 +80,7 @@ export async function getDeckCards(
     where p.event_id = ${eventId}
       and p.id <> ${me}
       and p.photo_url is not null
+      and p.suspended_at is null
       and not (p.id = any(${exclude}))
       and not exists (
         select 1 from intents i
@@ -93,10 +94,10 @@ export async function getDeckCards(
       and (${f.tags.length === 0} or p.tags && ${f.tags})
       and (${!f.soloOnly} or p.solo)
       and (${!hasAge}
-        or (p.birth_year is not null
-            and p.birth_year <= extract(year from now()) - ${f.ageMin ?? 0}
-            and p.birth_year >= extract(year from now()) - ${f.ageMax ?? 150})
-        or (${f.ageUnspecified} and p.birth_year is null))
+        or (p.birth_date is not null
+            and p.birth_date <= current_date - make_interval(years => ${f.ageMin ?? 0})
+            and p.birth_date >  current_date - make_interval(years => ${(f.ageMax ?? 149) + 1}))
+        or (${f.ageUnspecified} and p.birth_date is null))
       and (${companyQ === ""}
         or (p.company is not null and p.company ilike ${"%" + companyQ + "%"})
         or (${f.companyUnspecified} and p.company is null))
@@ -175,6 +176,7 @@ export async function getRequests(
     join profiles p on p.id = i.from_id
     where i.event_id = ${eventId} and i.to_id = ${me}
       and i.status = 'pending' and i.kind in ('meet','link')
+      and p.suspended_at is null
     order by i.created_at desc`;
   return rows.map((r) => ({
     id: r.id as string,
@@ -193,9 +195,11 @@ export async function getRequests(
 
 export async function getPendingRequestCount(eventId: string, me: string) {
   const rows = await sql`
-    select count(*)::int as n from intents
-    where event_id = ${eventId} and to_id = ${me}
-      and status = 'pending' and kind in ('meet','link')`;
+    select count(*)::int as n from intents i
+    join profiles p on p.id = i.from_id
+    where i.event_id = ${eventId} and i.to_id = ${me}
+      and i.status = 'pending' and i.kind in ('meet','link')
+      and p.suspended_at is null`;
   return (rows[0]?.n as number) ?? 0;
 }
 
@@ -253,6 +257,8 @@ export type ConnectionDetail = {
   iMet: boolean;
   theyMet: boolean;
   met_confirmed_at: Date | null;
+  verified: boolean; // met_method = 'qr'
+  rated: boolean; // I already submitted a rating for this connection
 };
 
 export async function getConnection(
@@ -261,7 +267,11 @@ export async function getConnection(
 ): Promise<ConnectionDetail | undefined> {
   const rows = await sql`
     select c.id, c.event_id, c.origin, c.profile_a, c.profile_b,
-           c.met_a, c.met_b, c.met_confirmed_at,
+           c.met_a, c.met_b, c.met_confirmed_at, c.met_method,
+           exists (
+             select 1 from ratings r
+             where r.connection_id = c.id and r.rater_id = ${me}
+           ) as rated,
            p.id as other_id, p.name as other_name, p.headline as other_headline,
            p.tags as other_tags, p.photo_url as other_photo, p.photos as other_photos
     from connections c
@@ -288,6 +298,8 @@ export async function getConnection(
     iMet: (amA ? r.met_a : r.met_b) as boolean,
     theyMet: (amA ? r.met_b : r.met_a) as boolean,
     met_confirmed_at: (r.met_confirmed_at as Date | null) ?? null,
+    verified: r.met_method === "qr",
+    rated: !!r.rated,
   };
 }
 

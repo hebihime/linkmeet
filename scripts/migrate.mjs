@@ -12,7 +12,9 @@ if (!url) {
   process.exit(1);
 }
 
-const sql = postgres(url, { ssl: "require" });
+const sql = postgres(url, {
+  ssl: url.includes("sslmode=disable") ? false : "require",
+});
 const schema = readFileSync(join(__dirname, "..", "db", "schema.sql"), "utf8");
 
 try {

@@ -80,10 +80,15 @@ export async function seedTestUsers(eventId: string, count: number) {
       photo_url: photos[0],
       photos,
       solo: Math.random() < 0.4,
-      birth_year:
-        Math.random() < 0.85
-          ? 1968 + Math.floor(Math.random() * 38) // ages ~20–58
-          : null,
+      // Full DOB, always set (the app is 18+ only): ages ~20–58, realistic
+      // for cons, and the deck's birth_date age filter always sees a value.
+      birth_date: (() => {
+        const age = 20 + Math.floor(Math.random() * 38);
+        const y = new Date().getFullYear() - age;
+        const mo = 1 + Math.floor(Math.random() * 12);
+        const d = 1 + Math.floor(Math.random() * 28);
+        return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      })(),
       gender: genders[Math.floor(Math.random() * genders.length)],
       company:
         Math.random() < 0.7

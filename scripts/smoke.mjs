@@ -3,7 +3,9 @@
 // node --env-file=.env.local scripts/smoke.mjs
 import postgres from "postgres";
 
-const sql = postgres(process.env.DATABASE_URL, { ssl: "require" });
+const sql = postgres(process.env.DATABASE_URL, {
+  ssl: process.env.DATABASE_URL.includes("sslmode=disable") ? false : "require",
+});
 const id = (p = "") => p + Math.random().toString(36).slice(2, 12);
 
 let ok = true;

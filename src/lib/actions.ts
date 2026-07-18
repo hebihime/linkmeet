@@ -1,12 +1,15 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { SignJWT, jwtVerify } from "jose";
 import { sql } from "./db";
 import { getSession, setSession, type Session } from "./session";
 import { makeEventId, newId, newCode, normalizeEmail } from "./ids";
 import { getDeckCards, getMessages, type Card, type Message } from "./queries";
 import type { DeckFilters } from "./filters";
 import { seedTestUsers, seedTestRequests, testUserReply } from "./seed";
+import { checkProfileText } from "./moderation";
+import { POSITIVE_KEYS, REPORT_KEYS } from "./feedback";
 
 // ---- Create event (three access modes) ------------------------------------
 
@@ -142,6 +145,30 @@ export async function login(
 
 // ---- Save profile ----------------------------------------------------------
 
+// Exact age from a "YYYY-MM-DD" string, or null if it isn't a real date.
+// Full DOB (not year) on purpose: a self-reported year lets a late-birthday
+// 17-year-old through; a date makes the 18 boundary exact.
+function ageFromDob(dob: string): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dob);
+  if (!m) return null;
+  const [y, mo, d] = [+m[1], +m[2], +m[3]];
+  const birth = new Date(Date.UTC(y, mo - 1, d));
+  if (
+    birth.getUTCFullYear() !== y ||
+    birth.getUTCMonth() !== mo - 1 ||
+    birth.getUTCDate() !== d
+  )
+    return null;
+  const now = new Date();
+  let age = now.getUTCFullYear() - y;
+  if (
+    now.getUTCMonth() + 1 < mo ||
+    (now.getUTCMonth() + 1 === mo && now.getUTCDate() < d)
+  )
+    age--;
+  return age;
+}
+
 // Shaped for useActionState: returns { error } on validation failure,
 // redirects on success (so the success "state" never renders). A raw
 // progressive-enhancement POST invokes the action with FormData as the only
@@ -178,11 +205,6 @@ export async function saveProfile(
   }
   const photo_url = photos[0] ?? null;
 
-  const birthYearRaw = parseInt(String(formData.get("birth_year") ?? ""), 10);
-  const nowYear = new Date().getFullYear();
-  const birth_year =
-    birthYearRaw >= 1900 && birthYearRaw <= nowYear - 10 ? birthYearRaw : null;
-
   const company = String(formData.get("company") ?? "").trim() || null;
 
   if (!name) return { error: "Name is required." };
@@ -190,11 +212,34 @@ export async function saveProfile(
   // cards, so a profile can't exist without one.
   if (photos.length === 0) return { error: "Add at least one photo." };
 
+  // 18+ gate. LinkMeet is adults-only: exact DOB (required) plus an explicit
+  // attestation checkbox — the attestation is the legal backstop for a
+  // self-reported date. birth_year is dormant; birth_date is the source of
+  // truth for all age reads.
+  const birth_date = String(formData.get("birth_date") ?? "").trim();
+  const age = ageFromDob(birth_date);
+  if (age === null) return { error: "Enter your date of birth." };
+  if (age < 18) return { error: "You must be 18 or older to use LinkMeet." };
+  if (age > 120) return { error: "Enter your real date of birth." };
+  if (formData.get("adult") !== "on")
+    return { error: "Confirm that you're 18 or older." };
+
+  // Safety filter on every card-visible text field. Reject with a message
+  // rather than silently stripping, so nothing appears to save when it didn't.
+  const unsafe = checkProfileText({ name, headline, company, tags });
+  if (unsafe)
+    return {
+      error:
+        unsafe.field === "tags"
+          ? `That tag isn't allowed — remove "${unsafe.term}" and try again.`
+          : `Your ${unsafe.field} contains a word that isn't allowed ("${unsafe.term}").`,
+    };
+
   const isFirstProfile = !session.profileId;
 
   const rows = await sql`
-    insert into profiles (id, event_id, email, name, headline, tags, photo_url, photos, solo, birth_year, company)
-    values (${newId()}, ${session.eventId}, ${session.email}, ${name}, ${headline}, ${tags}, ${photo_url}, ${photos}, ${solo}, ${birth_year}, ${company})
+    insert into profiles (id, event_id, email, name, headline, tags, photo_url, photos, solo, birth_date, company)
+    values (${newId()}, ${session.eventId}, ${session.email}, ${name}, ${headline}, ${tags}, ${photo_url}, ${photos}, ${solo}, ${birth_date}, ${company})
     on conflict (event_id, email) do update
       set name = excluded.name,
           headline = excluded.headline,
@@ -202,7 +247,7 @@ export async function saveProfile(
           photo_url = excluded.photo_url,
           photos = excluded.photos,
           solo = excluded.solo,
-          birth_year = excluded.birth_year,
+          birth_date = excluded.birth_date,
           company = excluded.company
     returning id`;
 
@@ -409,7 +454,8 @@ export async function respondToRequest(
 
 async function myConnection(connectionId: string, me: string) {
   const rows = await sql`
-    select id, event_id, profile_a, profile_b, met_a, met_b, met_confirmed_at
+    select id, event_id, profile_a, profile_b, met_a, met_b, met_confirmed_at,
+           met_method
     from connections
     where id = ${connectionId} and (profile_a = ${me} or profile_b = ${me})
     limit 1`;
@@ -420,9 +466,33 @@ export type MetState = {
   iMet: boolean;
   theyMet: boolean;
   confirmed: boolean;
+  verified: boolean; // met_method = 'qr' — the only weight-bearing state
 };
 
-export type ThreadState = { messages: Message[]; met: MetState };
+export type ThreadState = {
+  messages: Message[];
+  met: MetState;
+  rated: boolean; // I already rated this connection
+};
+
+function metStateFor(
+  me: string,
+  conn: {
+    profile_a: string;
+    met_a: boolean;
+    met_b: boolean;
+    met_confirmed_at: Date | null;
+    met_method: string | null;
+  },
+): MetState {
+  const amA = conn.profile_a === me;
+  return {
+    iMet: amA ? conn.met_a : conn.met_b,
+    theyMet: amA ? conn.met_b : conn.met_a,
+    confirmed: !!conn.met_confirmed_at,
+    verified: conn.met_method === "qr",
+  };
+}
 
 export async function fetchThread(
   connectionId: string,
@@ -432,15 +502,16 @@ export async function fetchThread(
   const conn = await myConnection(connectionId, session.profileId);
   if (!conn) return null;
 
-  const amA = conn.profile_a === session.profileId;
-  const messages = await getMessages(connectionId);
+  const [messages, myRating] = await Promise.all([
+    getMessages(connectionId),
+    sql`select 1 from ratings
+        where connection_id = ${connectionId} and rater_id = ${session.profileId}
+        limit 1`,
+  ]);
   return {
     messages,
-    met: {
-      iMet: (amA ? conn.met_a : conn.met_b) as boolean,
-      theyMet: (amA ? conn.met_b : conn.met_a) as boolean,
-      confirmed: !!conn.met_confirmed_at,
-    },
+    met: metStateFor(session.profileId, conn as never),
+    rated: myRating.length > 0,
   };
 }
 
@@ -462,8 +533,10 @@ export async function sendMessage(
   return rows[0] as unknown as Message;
 }
 
-// "We met" — each side taps once; both taps = confirmed. Test users tap back
-// immediately so the confirmation is testable solo.
+// Soft "we met" — the legacy honor tap. Each side taps once; both taps =
+// confirmed; test users tap back immediately. Purely cosmetic now: it never
+// sets met_method, so it unlocks nothing (ratings and reputation require the
+// QR-verified path below).
 export async function markMet(connectionId: string): Promise<MetState | null> {
   const session = await requireProfile();
   if (!session) return null;
@@ -481,7 +554,7 @@ export async function markMet(connectionId: string): Promise<MetState | null> {
       met_a = met_a or (profile_a = ${me}) or (${otherIsTest} and profile_a = ${otherId}),
       met_b = met_b or (profile_b = ${me}) or (${otherIsTest} and profile_b = ${otherId})
     where id = ${connectionId}
-    returning profile_a, profile_b, met_a, met_b, met_confirmed_at`;
+    returning profile_a, profile_b, met_a, met_b, met_confirmed_at, met_method`;
   const updated = rows[0];
 
   let confirmedAt = updated.met_confirmed_at as Date | null;
@@ -498,5 +571,252 @@ export async function markMet(connectionId: string): Promise<MetState | null> {
     iMet: (amA ? updated.met_a : updated.met_b) as boolean,
     theyMet: (amA ? updated.met_b : updated.met_a) as boolean,
     confirmed: !!confirmedAt,
+    verified: updated.met_method === "qr",
   };
+}
+
+// ---- Verified "we met": QR bump + GPS confidence signal ---------------------
+//
+// One side shows a signed short-lived QR token; the other scans it. A scan
+// proves physical presence well enough to close the *unilateral* fake (you
+// can't scan a code that isn't in front of your lens). Two willing colluders
+// remain possible — that residual hole is discounted later by reputation
+// graph/velocity checks, not prevented here.
+//
+// GPS is a confidence/fraud signal, NOT proof: web geolocation is spoofable
+// in seconds (devtools sensors, extensions) and drifts 20–100m+ indoors. So
+// distance discounts met_confidence and flags impossible pairs, but never
+// hard-rejects a scan — a real meet inside a concrete venue must not bounce.
+
+export type MeetCoords = { lat: number; lng: number };
+
+const MEET_TOKEN_TTL_S = 120;
+
+function meetSecret() {
+  const s = process.env.SESSION_SECRET;
+  if (!s) throw new Error("SESSION_SECRET is not set");
+  return new TextEncoder().encode(s);
+}
+
+function haversineMeters(a: MeetCoords, b: MeetCoords): number {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const s =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+
+function cleanCoords(c: unknown): MeetCoords | null {
+  if (!c || typeof c !== "object") return null;
+  const { lat, lng } = c as MeetCoords;
+  if (typeof lat !== "number" || typeof lng !== "number") return null;
+  if (!isFinite(lat) || !isFinite(lng)) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return { lat, lng };
+}
+
+// Writes the verified state: both met flags, met_method='qr', coords in the
+// right a/b slots, distance + confidence. Idempotent — an already-verified
+// connection is left untouched so a replay can't overwrite recorded coords.
+async function applyQrConfirm(
+  connectionId: string,
+  conn: { profile_a: string; profile_b: string; met_method: string | null },
+  issuerId: string,
+  issuerCoords: MeetCoords | null,
+  scannerCoords: MeetCoords | null,
+): Promise<void> {
+  if (conn.met_method === "qr") return;
+
+  const issuerIsA = conn.profile_a === issuerId;
+  const aCoords = issuerIsA ? issuerCoords : scannerCoords;
+  const bCoords = issuerIsA ? scannerCoords : issuerCoords;
+
+  const distance =
+    aCoords && bCoords ? haversineMeters(aCoords, bCoords) : null;
+  // Confidence: 70 = QR alone (either side lacked GPS). Consistent GPS raises
+  // it; inconsistent GPS lowers it; different-cities distance = fraud-flag
+  // territory but still records (never hard-reject on GPS alone).
+  const confidence =
+    distance === null
+      ? 70
+      : distance <= 250
+        ? 95
+        : distance <= 1500
+          ? 85
+          : distance <= 50000
+            ? 40
+            : 10;
+
+  await sql`
+    update connections set
+      met_a = true,
+      met_b = true,
+      met_confirmed_at = coalesce(met_confirmed_at, now()),
+      met_method = 'qr',
+      met_lat_a = ${aCoords?.lat ?? null},
+      met_lng_a = ${aCoords?.lng ?? null},
+      met_lat_b = ${bCoords?.lat ?? null},
+      met_lng_b = ${bCoords?.lng ?? null},
+      met_distance_m = ${distance},
+      met_confidence = ${confidence}
+    where id = ${connectionId} and met_method is distinct from 'qr'`;
+}
+
+export type MintMeetResult =
+  | { error: string }
+  | { token: string; ttlSeconds: number; autoConfirmed: MetState | null };
+
+// "Show my code": mint a signed token bound to (connection, me). The
+// counterparty's scan — not this mint — is what confirms. Issuer coords ride
+// inside the signed token so the confirm step has both sides' GPS without an
+// extra round trip. If the counterparty is a test user there is no second
+// device, so the scan is simulated immediately (the solo-testable bypass).
+export async function mintMeetToken(
+  connectionId: string,
+  coords: MeetCoords | null,
+): Promise<MintMeetResult> {
+  const session = await requireProfile();
+  if (!session) return { error: "Not signed in." };
+  const me = session.profileId;
+  const conn = await myConnection(connectionId, me);
+  if (!conn) return { error: "Connection not found." };
+
+  const safeCoords = cleanCoords(coords);
+  const token = await new SignJWT({
+    p: "meet",
+    cid: connectionId,
+    iss_id: me,
+    lat: safeCoords?.lat,
+    lng: safeCoords?.lng,
+  })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime(`${MEET_TOKEN_TTL_S}s`)
+    .sign(meetSecret());
+
+  const otherId = (conn.profile_a === me ? conn.profile_b : conn.profile_a) as string;
+  const other = await sql`
+    select is_test from profiles where id = ${otherId} limit 1`;
+
+  let autoConfirmed: MetState | null = null;
+  if (other[0]?.is_test) {
+    await applyQrConfirm(connectionId, conn as never, me, safeCoords, safeCoords);
+    const updated = await myConnection(connectionId, me);
+    autoConfirmed = metStateFor(me, updated as never);
+  }
+
+  return { token, ttlSeconds: MEET_TOKEN_TTL_S, autoConfirmed };
+}
+
+// "Scan to confirm": the counterparty posts the token they scanned. Signature
+// + freshness (exp) + binding checks: the token's connection must be one I'm
+// in, and its issuer must be the *other* member — I can't scan my own code.
+// One valid scan confirms the pair atomically.
+export async function confirmMeetScan(
+  token: string,
+  coords: MeetCoords | null,
+): Promise<{ met: MetState } | { error: string }> {
+  const session = await requireProfile();
+  if (!session) return { error: "Not signed in." };
+  const me = session.profileId;
+
+  let payload: Record<string, unknown>;
+  try {
+    ({ payload } = await jwtVerify(token, meetSecret()));
+  } catch {
+    return { error: "That code expired — ask them to show a fresh one." };
+  }
+  if (payload.p !== "meet" || typeof payload.cid !== "string")
+    return { error: "That's not a LinkMeet code." };
+
+  const conn = await myConnection(payload.cid, me);
+  if (!conn) return { error: "That code is for a different connection." };
+  const issuerId = payload.iss_id as string;
+  if (issuerId === me) return { error: "That's your own code — they scan yours, or you scan theirs." };
+  if (issuerId !== conn.profile_a && issuerId !== conn.profile_b)
+    return { error: "That code is for a different connection." };
+
+  const issuerCoords = cleanCoords({
+    lat: payload.lat as number,
+    lng: payload.lng as number,
+  });
+  await applyQrConfirm(
+    payload.cid,
+    conn as never,
+    issuerId,
+    issuerCoords,
+    cleanCoords(coords),
+  );
+  const updated = await myConnection(payload.cid, me);
+  return { met: metStateFor(me, updated as never) };
+}
+
+// ---- Ratings + safety reports ----------------------------------------------
+//
+// Two channels, never one star scale. Ratings (positive endorsement) unlock
+// ONLY on a QR-verified meet; they're private/aggregate and double-blind.
+// Safety reports need no verified meet — someone harassing you in chat never
+// met you — and are routed to review with an automated threshold backstop.
+
+export async function submitRating(
+  connectionId: string,
+  endorse: boolean,
+  positives: string[],
+): Promise<{ ok: true } | { error: string }> {
+  const session = await requireProfile();
+  if (!session) return { error: "Not signed in." };
+  const me = session.profileId;
+  const conn = await myConnection(connectionId, me);
+  if (!conn) return { error: "Connection not found." };
+  if (conn.met_method !== "qr")
+    return { error: "Ratings unlock after you verify you met in person." };
+
+  const clean = positives.filter((p) => POSITIVE_KEYS.includes(p)).slice(0, 8);
+  const rateeId = (conn.profile_a === me ? conn.profile_b : conn.profile_a) as string;
+  await sql`
+    insert into ratings (id, connection_id, rater_id, ratee_id, endorse, positives)
+    values (${newId()}, ${connectionId}, ${me}, ${rateeId}, ${endorse}, ${clean})
+    on conflict (connection_id, rater_id) do nothing`;
+  return { ok: true };
+}
+
+// N distinct reporters (excluding no-shows) auto-suspends pending review —
+// the interim trust-safety response while there's no moderation surface.
+const SUSPEND_REPORTER_THRESHOLD = 3;
+
+export async function submitSafetyReport(
+  connectionId: string,
+  reason: string,
+  detail: string,
+): Promise<{ ok: true } | { error: string }> {
+  const session = await requireProfile();
+  if (!session) return { error: "Not signed in." };
+  const me = session.profileId;
+  const conn = await myConnection(connectionId, me);
+  if (!conn) return { error: "Connection not found." };
+  if (!REPORT_KEYS.includes(reason))
+    return { error: "Pick what happened." };
+
+  const reportedId = (conn.profile_a === me ? conn.profile_b : conn.profile_a) as string;
+  const cleanDetail = detail.trim().slice(0, 1000) || null;
+
+  // One report per reporter per connection — resubmits are a quiet no-op.
+  const existing = await sql`
+    select 1 from safety_reports
+    where connection_id = ${connectionId} and reporter_id = ${me} limit 1`;
+  if (existing.length === 0) {
+    await sql`
+      insert into safety_reports (id, connection_id, reporter_id, reported_id, reason, detail)
+      values (${newId()}, ${connectionId}, ${me}, ${reportedId}, ${reason}, ${cleanDetail})`;
+    await sql`
+      update profiles set suspended_at = now()
+      where id = ${reportedId} and suspended_at is null
+        and (select count(distinct reporter_id) from safety_reports
+             where reported_id = ${reportedId} and reason <> 'no_show')
+            >= ${SUSPEND_REPORTER_THRESHOLD}`;
+  }
+  return { ok: true };
 }

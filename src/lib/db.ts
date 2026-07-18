@@ -11,7 +11,11 @@ function getSql(): Sql {
   if (!g._sql) {
     const url = process.env.DATABASE_URL;
     if (!url) throw new Error("DATABASE_URL is not set");
-    g._sql = postgres(url, { ssl: "require" });
+    // sslmode=disable in the URL opts out (local throwaway DBs for tests);
+    // anything else — i.e. Neon — always connects over TLS.
+    g._sql = postgres(url, {
+      ssl: url.includes("sslmode=disable") ? false : "require",
+    });
   }
   return g._sql;
 }

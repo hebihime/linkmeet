@@ -62,6 +62,14 @@ alter table profiles add column if not exists show_me text not null default 'eve
 alter table profiles add column if not exists company text;
 update profiles set photos = array[photo_url]
   where photo_url is not null and photos = '{}';
+-- Trust & safety: full DOB (not year) so the 18+ boundary is exact.
+-- birth_year goes dormant; lossy backfill (year -> Jan 1) for existing rows.
+alter table profiles add column if not exists birth_date date;
+update profiles set birth_date = make_date(birth_year, 1, 1)
+  where birth_year is not null and birth_date is null;
+-- Set when safety reports cross the auto-suspend threshold; suspended profiles
+-- are dropped from decks and request inboxes pending review.
+alter table profiles add column if not exists suspended_at timestamptz;
 
 -- One row per (from -> to). Records the deck action AND, for non-pass kinds,
 -- the async request lifecycle. 'pass' rows exist only to keep the deck from
@@ -96,6 +104,20 @@ create table if not exists connections (
   unique (profile_a, profile_b)
 );
 
+-- Verified "we met": only met_method = 'qr' (one party scanned the other's
+-- signed QR token) is weight-bearing — it gates ratings and feeds reputation.
+-- The legacy honor tap still sets met_a/met_b/met_confirmed_at but leaves
+-- met_method null and grants nothing. GPS coords are a confidence/fraud
+-- signal, never proof: web geolocation is spoofable and indoor-inaccurate,
+-- so distance discounts met_confidence but never hard-rejects a scan.
+alter table connections add column if not exists met_method text;
+alter table connections add column if not exists met_lat_a double precision;
+alter table connections add column if not exists met_lng_a double precision;
+alter table connections add column if not exists met_lat_b double precision;
+alter table connections add column if not exists met_lng_b double precision;
+alter table connections add column if not exists met_distance_m double precision;
+alter table connections add column if not exists met_confidence int; -- 0..100
+
 create table if not exists messages (
   id            text primary key,
   connection_id text not null references connections(id) on delete cascade,
@@ -103,6 +125,37 @@ create table if not exists messages (
   body          text not null,
   created_at    timestamptz not null default now()
 );
+
+-- Post-meet feedback, split into two channels on purpose: a positive
+-- endorsement (reputation) and a separate safety report. Never one star
+-- scale — it would conflate "dull conversation" with "unsafe" and destroy
+-- the safety signal. Both are private/aggregate and double-blind.
+create table if not exists ratings (
+  id            text primary key,
+  connection_id text not null references connections(id) on delete cascade,
+  rater_id      text not null references profiles(id) on delete cascade,
+  ratee_id      text not null references profiles(id) on delete cascade,
+  endorse       boolean,                      -- "would connect again"
+  positives     text[] not null default '{}', -- positive chips
+  created_at    timestamptz not null default now(),
+  unique (connection_id, rater_id)
+);
+
+create table if not exists safety_reports (
+  id            text primary key,
+  connection_id text references connections(id) on delete set null,
+  reporter_id   text not null references profiles(id) on delete cascade,
+  reported_id   text not null references profiles(id) on delete cascade,
+  reason        text not null
+                  check (reason in ('no_show','disrespect','harassment','safety')),
+  detail        text,
+  status        text not null default 'open'
+                  check (status in ('open','reviewed','actioned')),
+  created_at    timestamptz not null default now()
+);
+
+create index if not exists idx_ratings_ratee on ratings(ratee_id);
+create index if not exists idx_safety_reported on safety_reports(reported_id);
 
 create index if not exists idx_profiles_event on profiles(event_id);
 create index if not exists idx_intents_to on intents(event_id, to_id, status);
