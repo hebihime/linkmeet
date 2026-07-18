@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { getConnections } from "@/lib/queries";
 import { requireAttendee } from "@/lib/auth";
-import BottomNav from "../BottomNav";
 
 function initials(name: string) {
   return name
@@ -23,8 +22,7 @@ export default async function ChatsPage({
   const connections = await getConnections(eventId, session.profileId);
 
   return (
-    <>
-      <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-5 px-6 pb-28 pt-8">
+    <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-5 px-6 pb-28 pt-8">
         <header>
           <h1 className="text-3xl font-bold tracking-tight">Chats</h1>
           <p className="mt-1 text-sm text-neutral-400">
@@ -88,8 +86,6 @@ export default async function ChatsPage({
             ))}
           </ul>
         )}
-      </main>
-      <BottomNav eventId={eventId} active="chats" />
-    </>
+    </main>
   );
 }

@@ -1,6 +1,7 @@
+"use client";
+
 import Link from "next/link";
-import { getSession } from "@/lib/session";
-import { getPendingRequestCount } from "@/lib/queries";
+import { usePathname } from "next/navigation";
 
 type Tab = "explore" | "connect" | "requests" | "chats" | "profile";
 
@@ -46,18 +47,19 @@ const LABELS: Record<Tab, string> = {
 
 const ORDER: Tab[] = ["explore", "connect", "requests", "chats", "profile"];
 
-export default async function BottomNav({
+// Rendered once by the event layout; persists across tab switches. Data
+// (pending count) comes from the layout — this component only reads the URL.
+export default function BottomNav({
   eventId,
-  active,
+  pending,
 }: {
   eventId: string;
-  active: Tab;
+  pending: number;
 }) {
-  const session = await getSession();
-  const pending =
-    session?.profileId && session.eventId === eventId
-      ? await getPendingRequestCount(eventId, session.profileId)
-      : 0;
+  const pathname = usePathname();
+  const active = ORDER.find((tab) => pathname === `/${eventId}/${tab}`);
+  // Only the five tab screens get the bar — not login or chat threads.
+  if (!active) return null;
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-neutral-800 bg-neutral-950/90 backdrop-blur-md">

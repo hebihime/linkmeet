@@ -2,7 +2,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getEvent, getProfile, getExploreStats } from "@/lib/queries";
 import { requireAttendee } from "@/lib/auth";
-import BottomNav from "../BottomNav";
 import Countdown from "./Countdown";
 
 // "AI Con 2026" -> "AC" — placeholder mark when the event has no logo.
@@ -34,8 +33,7 @@ export default async function ExplorePage({
   const stats = await getExploreStats(eventId, profile);
 
   return (
-    <>
-      <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col pb-28">
+    <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col pb-28">
         {/* Hero — same pattern as the login screen: event image with the
             wordmark + title anchored to the bottom. */}
         <div className="relative h-64 w-full shrink-0 overflow-hidden">
@@ -122,8 +120,6 @@ export default async function ExplorePage({
             )}
           </section>
         </div>
-      </main>
-      <BottomNav eventId={eventId} active="explore" />
-    </>
+    </main>
   );
 }

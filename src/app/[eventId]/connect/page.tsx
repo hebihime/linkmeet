@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { getEvent, getDeckCards, getEventTags, getProfile } from "@/lib/queries";
 import { requireAttendee } from "@/lib/auth";
-import BottomNav from "../BottomNav";
 import Deck from "./Deck";
 
 export default async function ConnectPage({
@@ -23,14 +22,11 @@ export default async function ConnectPage({
   ]);
 
   return (
-    <>
-      <Deck
-        eventId={eventId}
-        initialCards={cards}
-        availableTags={availableTags}
-        viewerSolo={me?.solo ?? false}
-      />
-      <BottomNav eventId={eventId} active="connect" />
-    </>
+    <Deck
+      eventId={eventId}
+      initialCards={cards}
+      availableTags={availableTags}
+      viewerSolo={me?.solo ?? false}
+    />
   );
 }

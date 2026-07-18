@@ -31,6 +31,18 @@ async function get(path, cookie) {
   });
 }
 
+// With loading.tsx boundaries the shell streams as a 200 and redirect()
+// arrives in-body (NEXT_REDIRECT marker + meta refresh fallback), so accept
+// either a real 3xx or a streamed redirect to the expected target.
+async function redirectsTo(res, targetTest) {
+  if (res.status >= 300 && res.status < 400)
+    return targetTest(res.headers.get("location") ?? "");
+  if (res.status !== 200) return false;
+  const html = await res.text();
+  const m = html.match(/NEXT_REDIRECT;replace;([^;]+);/);
+  return !!m && targetTest(m[1]);
+}
+
 const liveEvent = `e2e-live-${id()}`;
 const futureEvent = `e2e-future-${id()}`;
 
@@ -78,7 +90,7 @@ try {
 
   // ---- checks -----------------------------------------------------------------
   const noAuth = await get(`/${liveEvent}/explore`);
-  check("unauthenticated /explore redirects to login", noAuth.status >= 300 && noAuth.status < 400 && (noAuth.headers.get("location") ?? "").endsWith(`/${liveEvent}`));
+  check("unauthenticated /explore redirects to login", await redirectsTo(noAuth, (loc) => loc.endsWith(`/${liveEvent}`)));
 
   const explore = await get(`/${liveEvent}/explore`, cookie);
   const exploreHtml = await explore.text();
@@ -125,10 +137,10 @@ try {
   check("Pre-event Explore shows waiting copy", futureHtml.includes("everyone starts together"));
 
   const futureConnect = await get(`/${futureEvent}/connect`, futureCookie);
-  check("Pre-event Connect redirects to Explore", futureConnect.status >= 300 && futureConnect.status < 400 && (futureConnect.headers.get("location") ?? "").includes("/explore"));
+  check("Pre-event Connect redirects to Explore", await redirectsTo(futureConnect, (loc) => loc.includes("/explore")));
 
   const wrongEvent = await get(`/${futureEvent}/explore`, cookie);
-  check("Session bound to one event only", wrongEvent.status >= 300 && wrongEvent.status < 400);
+  check("Session bound to one event only", await redirectsTo(wrongEvent, () => true));
 
   const login = await get(`/${liveEvent}`);
   const loginHtml = await login.text();
