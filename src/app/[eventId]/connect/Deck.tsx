@@ -471,13 +471,13 @@ export default function Deck({
 
   return (
     <main className="mx-auto flex h-dvh w-full max-w-md flex-col px-5 pb-24 pt-4">
-      <header className="relative mb-3 flex items-center justify-center text-xs font-semibold uppercase tracking-widest text-neutral-600">
+      <header className="mb-3 flex items-center">
         <button
           onClick={() => setFiltersOpen(true)}
           aria-label="Deck filters"
-          className="absolute left-0 flex h-8 w-8 items-center justify-center rounded-full text-neutral-400 transition hover:text-white"
+          className="relative flex h-10 w-10 items-center justify-center rounded-full bg-white/5 text-neutral-300 transition hover:bg-white/10 hover:text-white"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-6 w-6">
             <path d="M4 6h16M4 12h16M4 18h16" />
           </svg>
           {activeFilterCount(filters) > 0 && (
@@ -486,7 +486,6 @@ export default function Deck({
             </span>
           )}
         </button>
-        Connect
       </header>
 
       <div ref={containerRef} className="relative min-h-0 flex-1">
