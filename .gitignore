@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# AI planning / prompt docs — kept local, never in the repo
+*_PLAN.md
+*_SUPERPROMPT.md
