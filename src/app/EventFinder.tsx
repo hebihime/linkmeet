@@ -42,7 +42,7 @@ export default function EventFinder({ events }: { events: EventListItem[] }) {
               key={e.id}
               href={`/${e.id}`}
               role="listitem"
-              className="group flex w-48 shrink-0 snap-start flex-col overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900 transition hover:border-neutral-600"
+              className="group flex w-56 shrink-0 snap-start flex-col overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900 transition hover:border-neutral-600"
             >
               {e.logo_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
