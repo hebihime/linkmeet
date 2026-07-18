@@ -1,22 +1,21 @@
 "use client";
 
 import { useState } from "react";
-import {
-  DEFAULT_FILTERS,
-  type DeckFilters,
-  type ShowMe,
-} from "@/lib/filters";
+import { DEFAULT_FILTERS, type DeckFilters } from "@/lib/filters";
+import AgeRange from "./AgeRange";
 
 // Full-screen deck filter settings, opened from the hamburger. Edits a local
 // draft; nothing hits the deck until Apply.
 export default function FiltersModal({
   filters,
   availableTags,
+  viewerSolo,
   onApply,
   onClose,
 }: {
   filters: DeckFilters;
   availableTags: string[];
+  viewerSolo: boolean;
   onApply: (f: DeckFilters) => void;
   onClose: () => void;
 }) {
@@ -81,83 +80,30 @@ export default function FiltersModal({
             )}
           </section>
 
-          <section className="flex flex-col gap-3">
-            <Toggle
-              label="Attending solo only"
-              checked={draft.soloOnly}
-              onChange={(v) => set({ soloOnly: v })}
-            />
-            <Toggle
-              label="Has a photo"
-              checked={draft.hasPhoto}
-              onChange={(v) => set({ hasPhoto: v })}
-            />
-          </section>
+          {viewerSolo && (
+            <section className="flex flex-col gap-3">
+              <Toggle
+                label="Attending solo only"
+                checked={draft.soloOnly}
+                onChange={(v) => set({ soloOnly: v })}
+              />
+            </section>
+          )}
 
           <section className="flex flex-col gap-3">
             <h3 className="text-sm font-semibold uppercase tracking-widest text-neutral-500">
               Age
             </h3>
-            <div className="flex items-center gap-3">
-              <input
-                type="number"
-                inputMode="numeric"
-                min={18}
-                max={99}
-                placeholder="Min"
-                value={draft.ageMin ?? ""}
-                onChange={(e) =>
-                  set({ ageMin: e.target.value ? Number(e.target.value) : null })
-                }
-                className="w-24 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2.5 outline-none focus:border-neutral-400"
-              />
-              <span className="text-neutral-500">to</span>
-              <input
-                type="number"
-                inputMode="numeric"
-                min={18}
-                max={99}
-                placeholder="Max"
-                value={draft.ageMax ?? ""}
-                onChange={(e) =>
-                  set({ ageMax: e.target.value ? Number(e.target.value) : null })
-                }
-                className="w-24 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2.5 outline-none focus:border-neutral-400"
-              />
-            </div>
+            <AgeRange
+              ageMin={draft.ageMin}
+              ageMax={draft.ageMax}
+              onChange={(ageMin, ageMax) => set({ ageMin, ageMax })}
+            />
             {(draft.ageMin != null || draft.ageMax != null) && (
               <Toggle
                 label="Include people who didn't share their age"
                 checked={draft.ageUnspecified}
                 onChange={(v) => set({ ageUnspecified: v })}
-              />
-            )}
-          </section>
-
-          <section className="flex flex-col gap-3">
-            <h3 className="text-sm font-semibold uppercase tracking-widest text-neutral-500">
-              Show me
-            </h3>
-            <div className="flex gap-2">
-              {(["everyone", "men", "women"] as ShowMe[]).map((v) => (
-                <button
-                  key={v}
-                  onClick={() => set({ showMe: v })}
-                  className={`flex-1 rounded-xl px-3 py-2.5 text-sm capitalize transition ${
-                    draft.showMe === v
-                      ? "bg-white font-semibold text-black"
-                      : "bg-white/10 text-neutral-300 hover:bg-white/20"
-                  }`}
-                >
-                  {v}
-                </button>
-              ))}
-            </div>
-            {draft.showMe !== "everyone" && (
-              <Toggle
-                label="Include people who didn't share their gender"
-                checked={draft.genderUnspecified}
-                onChange={(v) => set({ genderUnspecified: v })}
               />
             )}
           </section>

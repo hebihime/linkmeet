@@ -25,7 +25,6 @@ export type Card = {
 export type Profile = Card & {
   solo: boolean;
   birth_year: number | null;
-  gender: string | null;
   company: string | null;
 };
 
@@ -54,7 +53,7 @@ export async function listEvents(): Promise<EventListItem[]> {
 export async function getProfile(profileId: string) {
   const rows = await sql`
     select id, name, headline, tags, photo_url, photos, solo,
-           birth_year, gender, company
+           birth_year, company
     from profiles where id = ${profileId} limit 1`;
   return rows[0] as Profile | undefined;
 }
@@ -74,16 +73,13 @@ export async function getDeckCards(
 ): Promise<Card[]> {
   const f = { ...DEFAULT_FILTERS, ...filters };
   const hasAge = f.ageMin != null || f.ageMax != null;
-  // show_me maps onto stored gender values; 'nonbinary' only surfaces under
-  // 'everyone', and nulls ride the include-unspecified toggle.
-  const wantGender =
-    f.showMe === "men" ? "man" : f.showMe === "women" ? "woman" : null;
   const companyQ = f.company.trim();
   const rows = await sql`
     select p.id, p.name, p.headline, p.tags, p.photo_url, p.photos
     from profiles p
     where p.event_id = ${eventId}
       and p.id <> ${me}
+      and p.photo_url is not null
       and not (p.id = any(${exclude}))
       and not exists (
         select 1 from intents i
@@ -96,15 +92,11 @@ export async function getDeckCards(
       )
       and (${f.tags.length === 0} or p.tags && ${f.tags})
       and (${!f.soloOnly} or p.solo)
-      and (${!f.hasPhoto} or p.photo_url is not null)
       and (${!hasAge}
         or (p.birth_year is not null
             and p.birth_year <= extract(year from now()) - ${f.ageMin ?? 0}
             and p.birth_year >= extract(year from now()) - ${f.ageMax ?? 150})
         or (${f.ageUnspecified} and p.birth_year is null))
-      and (${wantGender === null}
-        or p.gender = ${wantGender ?? ""}
-        or (${f.genderUnspecified} and p.gender is null))
       and (${companyQ === ""}
         or (p.company is not null and p.company ilike ${"%" + companyQ + "%"})
         or (${f.companyUnspecified} and p.company is null))

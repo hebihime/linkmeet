@@ -53,11 +53,12 @@ try {
 
   const person = (event_id, email, name, extra = {}) => ({
     id: id(), event_id, email, name,
-    headline: null, tags: [], solo: false, is_test: false, ...extra,
+    headline: null, tags: [], solo: false, is_test: false, photo_url: null, ...extra,
   });
   const me = person(liveEvent, "me@e2e.test", "JP Tester", { tags: ["AI", "coffee"], solo: true });
-  const tess = person(liveEvent, "t1@e2e.test", "Tess Deckcard", { headline: "Robotics engineer", tags: ["AI", "robotics"], solo: true, is_test: true });
-  const rex = person(liveEvent, "t2@e2e.test", "Rex Requester", { tags: ["coffee"], is_test: true });
+  // Deck candidates need a photo — the deck never deals photo-less cards.
+  const tess = person(liveEvent, "t1@e2e.test", "Tess Deckcard", { headline: "Robotics engineer", tags: ["AI", "robotics"], solo: true, is_test: true, photo_url: "https://i.pravatar.cc/300?img=32" });
+  const rex = person(liveEvent, "t2@e2e.test", "Rex Requester", { tags: ["coffee"], is_test: true, photo_url: "https://i.pravatar.cc/300?img=33" });
   const cam = person(liveEvent, "t3@e2e.test", "Cam Connected", { is_test: true });
   const futureMe = person(futureEvent, "me@e2e.test", "JP Tester", { tags: ["AI"], solo: true });
   await sql`insert into profiles ${sql([me, tess, rex, cam, futureMe])}`;
@@ -86,7 +87,7 @@ try {
   check("Explore shows signup counter", /attendee/.test(exploreHtml) && exploreHtml.includes("joined") && exploreHtml.includes("E2E Live Con"));
   check("Explore shows shared-tag stat", exploreHtml.includes("AI"));
   check("Explore shows solo stat", exploreHtml.includes("solo"));
-  check("Explore shows Connect-is-live CTA", exploreHtml.includes("Connect is live"));
+  check("Explore (live) hides the countdown", !exploreHtml.includes("Connect opens in"));
 
   const connect = await get(`/${liveEvent}/connect`, cookie);
   const connectHtml = await connect.text();
@@ -121,7 +122,7 @@ try {
   const futureExplore = await get(`/${futureEvent}/explore`, futureCookie);
   const futureHtml = await futureExplore.text();
   check("Pre-event Explore shows countdown", futureExplore.status === 200 && futureHtml.includes("Connect opens in"));
-  check("Pre-event Explore hides live CTA", !futureHtml.includes("Connect is live"));
+  check("Pre-event Explore shows waiting copy", futureHtml.includes("everyone starts together"));
 
   const futureConnect = await get(`/${futureEvent}/connect`, futureCookie);
   check("Pre-event Connect redirects to Explore", futureConnect.status >= 300 && futureConnect.status < 400 && (futureConnect.headers.get("location") ?? "").includes("/explore"));

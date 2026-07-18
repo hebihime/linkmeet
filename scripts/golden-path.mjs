@@ -111,7 +111,7 @@ try {
     name: "Golden Tester",
     headline: "Here to verify everything",
     tags: "AI, coffee",
-    photo_url: "",
+    photos: JSON.stringify(["https://i.pravatar.cc/300?img=68"]),
     solo: "on",
   });
   check("saveProfile redirects to explore", save.status === 303);

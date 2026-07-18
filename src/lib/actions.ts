@@ -142,7 +142,16 @@ export async function login(
 
 // ---- Save profile ----------------------------------------------------------
 
-export async function saveProfile(formData: FormData) {
+// Shaped for useActionState: returns { error } on validation failure,
+// redirects on success (so the success "state" never renders). A raw
+// progressive-enhancement POST invokes the action with FormData as the only
+// argument, so tolerate both shapes.
+export async function saveProfile(
+  prev: { error: string } | null,
+  formDataArg?: FormData,
+): Promise<{ error: string } | null> {
+  const formData =
+    formDataArg ?? (prev instanceof FormData ? prev : new FormData());
   const session = await getSession();
   if (!session) redirect("/");
 
@@ -174,20 +183,18 @@ export async function saveProfile(formData: FormData) {
   const birth_year =
     birthYearRaw >= 1900 && birthYearRaw <= nowYear - 10 ? birthYearRaw : null;
 
-  const genderRaw = String(formData.get("gender") ?? "");
-  const gender = ["man", "woman", "nonbinary"].includes(genderRaw)
-    ? genderRaw
-    : null;
-
   const company = String(formData.get("company") ?? "").trim() || null;
 
-  if (!name) return; // name is required; the form enforces it client-side too
+  if (!name) return { error: "Name is required." };
+  // At least one photo is an app invariant — the deck never deals photo-less
+  // cards, so a profile can't exist without one.
+  if (photos.length === 0) return { error: "Add at least one photo." };
 
   const isFirstProfile = !session.profileId;
 
   const rows = await sql`
-    insert into profiles (id, event_id, email, name, headline, tags, photo_url, photos, solo, birth_year, gender, company)
-    values (${newId()}, ${session.eventId}, ${session.email}, ${name}, ${headline}, ${tags}, ${photo_url}, ${photos}, ${solo}, ${birth_year}, ${gender}, ${company})
+    insert into profiles (id, event_id, email, name, headline, tags, photo_url, photos, solo, birth_year, company)
+    values (${newId()}, ${session.eventId}, ${session.email}, ${name}, ${headline}, ${tags}, ${photo_url}, ${photos}, ${solo}, ${birth_year}, ${company})
     on conflict (event_id, email) do update
       set name = excluded.name,
           headline = excluded.headline,
@@ -196,7 +203,6 @@ export async function saveProfile(formData: FormData) {
           photos = excluded.photos,
           solo = excluded.solo,
           birth_year = excluded.birth_year,
-          gender = excluded.gender,
           company = excluded.company
     returning id`;
 

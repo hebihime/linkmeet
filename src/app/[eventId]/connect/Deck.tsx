@@ -55,10 +55,12 @@ export default function Deck({
   eventId,
   initialCards,
   availableTags,
+  viewerSolo,
 }: {
   eventId: string;
   initialCards: Card[];
   availableTags: string[];
+  viewerSolo: boolean;
 }) {
   const [stack, setStack] = useState<Card[]>(initialCards);
   const [celebration, setCelebration] = useState<Celebration | null>(null);
@@ -125,8 +127,11 @@ export default function Deck({
 
   // A filter change throws away the whole hand and deals fresh from the
   // server — the client stack can't be filtered locally without draining it.
+  // soloOnly is a solo-viewers-only affordance; sanitize it away for everyone
+  // else so a stale localStorage payload can't keep it stuck on.
   const applyFilters = useCallback(
-    (f: DeckFilters) => {
+    (raw: DeckFilters) => {
+      const f = viewerSolo ? raw : { ...raw, soloOnly: false };
       filtersRef.current = f;
       filterGenRef.current++;
       setFilters(f);
@@ -138,7 +143,7 @@ export default function Deck({
       setFiltersOpen(false);
       refill();
     },
-    [eventId, refill],
+    [eventId, refill, viewerSolo],
   );
 
   // Rehydrate saved filters. The server dealt an unfiltered hand; if the
@@ -146,7 +151,8 @@ export default function Deck({
   useEffect(() => {
     // Must run post-hydration: localStorage doesn't exist during SSR, so the
     // first render is always unfiltered and the saved filters land here.
-    const saved = loadFilters(eventId);
+    const raw = loadFilters(eventId);
+    const saved = viewerSolo ? raw : { ...raw, soloOnly: false };
     if (activeFilterCount(saved) > 0) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       applyFilters(saved);
@@ -520,6 +526,7 @@ export default function Deck({
         <FiltersModal
           filters={filters}
           availableTags={availableTags}
+          viewerSolo={viewerSolo}
           onApply={applyFilters}
           onClose={() => setFiltersOpen(false)}
         />

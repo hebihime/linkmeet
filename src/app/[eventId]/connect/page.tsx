@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getEvent, getDeckCards, getEventTags } from "@/lib/queries";
+import { getEvent, getDeckCards, getEventTags, getProfile } from "@/lib/queries";
 import { requireAttendee } from "@/lib/auth";
 import BottomNav from "../BottomNav";
 import Deck from "./Deck";
@@ -16,14 +16,20 @@ export default async function ConnectPage({
   if (!event) redirect("/");
   if (!event.live) redirect(`/${eventId}/explore`); // locked until the event starts
 
-  const [cards, availableTags] = await Promise.all([
+  const [cards, availableTags, me] = await Promise.all([
     getDeckCards(eventId, session.profileId, [], 12),
     getEventTags(eventId),
+    getProfile(session.profileId),
   ]);
 
   return (
     <>
-      <Deck eventId={eventId} initialCards={cards} availableTags={availableTags} />
+      <Deck
+        eventId={eventId}
+        initialCards={cards}
+        availableTags={availableTags}
+        viewerSolo={me?.solo ?? false}
+      />
       <BottomNav eventId={eventId} active="connect" />
     </>
   );
