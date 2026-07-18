@@ -32,6 +32,7 @@ export default async function EventEntry({
       eventId={eventId}
       eventName={event.name}
       accessMode={event.access_mode}
+      logoUrl={event.logo_url}
     />
   );
 }
