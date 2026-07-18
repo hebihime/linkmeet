@@ -50,17 +50,17 @@ export default function EventFinder({ events }: { events: EventListItem[] }) {
               key={e.id}
               href={`/${e.id}`}
               role="listitem"
-              className="group flex w-64 shrink-0 snap-start flex-col overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900 transition hover:border-neutral-600"
+              className="group flex w-48 shrink-0 snap-start flex-col overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900 transition hover:border-neutral-600"
             >
               {e.logo_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={e.logo_url}
                   alt=""
-                  className="aspect-[4/3] w-full object-cover"
+                  className="aspect-[3/4] w-full object-cover"
                 />
               ) : (
-                <div className="flex aspect-[4/3] w-full items-center justify-center bg-gradient-to-br from-indigo-500 to-fuchsia-500 text-5xl font-bold text-white">
+                <div className="flex aspect-[3/4] w-full items-center justify-center bg-gradient-to-br from-indigo-500 to-fuchsia-500 text-5xl font-bold text-white">
                   {initials(e.name)}
                 </div>
               )}
