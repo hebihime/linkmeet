@@ -99,7 +99,7 @@ export default function Thread({
   }
 
   return (
-    <main className="mx-auto flex h-dvh max-w-md flex-col">
+    <main className="mx-auto flex h-dvh w-full max-w-md flex-col">
       <header className="flex items-center gap-3 border-b border-neutral-800 bg-neutral-950/90 px-4 py-3 backdrop-blur-md">
         <Link
           href={`/${eventId}/chats`}

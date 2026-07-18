@@ -14,7 +14,7 @@ export default async function RequestsPage({
 
   return (
     <>
-      <main className="mx-auto flex min-h-dvh max-w-md flex-col gap-5 px-6 pb-28 pt-8">
+      <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-5 px-6 pb-28 pt-8">
         <header>
           <h1 className="text-3xl font-bold tracking-tight">Requests</h1>
           <p className="mt-1 text-sm text-neutral-400">

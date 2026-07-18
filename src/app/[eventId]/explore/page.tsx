@@ -25,7 +25,7 @@ export default async function ExplorePage({
 
   return (
     <>
-      <main className="mx-auto flex min-h-dvh max-w-md flex-col gap-6 px-6 pb-28 pt-8">
+      <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-6 px-6 pb-28 pt-8">
         <header>
           <p className="text-sm uppercase tracking-widest text-neutral-500">
             LinkMeet

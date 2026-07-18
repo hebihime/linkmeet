@@ -70,7 +70,7 @@ export default function LoginForm({
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col">
+    <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col">
       {/* Hero — event image fills the top of the screen; the wordmark sits
           above the event title, both anchored to the bottom of the image. */}
       <div className="relative h-64 w-full shrink-0 overflow-hidden">

@@ -393,7 +393,7 @@ export default function Deck({
   }
 
   return (
-    <main className="mx-auto flex h-dvh max-w-md flex-col px-5 pb-24 pt-4">
+    <main className="mx-auto flex h-dvh w-full max-w-md flex-col px-5 pb-24 pt-4">
       <header className="mb-3 text-center text-xs font-semibold uppercase tracking-widest text-neutral-600">
         Connect
       </header>

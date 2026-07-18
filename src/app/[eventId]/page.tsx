@@ -13,7 +13,7 @@ export default async function EventEntry({
 
   if (!event) {
     return (
-      <main className="mx-auto flex min-h-dvh max-w-md flex-col items-center justify-center gap-3 px-6 text-center">
+      <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col items-center justify-center gap-3 px-6 text-center">
         <h1 className="text-2xl font-bold">Event not found</h1>
         <p className="text-neutral-400">
           Double-check the link — this event doesn&apos;t exist.

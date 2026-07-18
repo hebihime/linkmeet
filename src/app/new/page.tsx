@@ -68,7 +68,7 @@ export default function NewEventPage() {
   if (created) return <CreatedView created={created} />;
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-5 px-6 py-10">
+    <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-5 px-6 py-10">
       <Link href="/" className="text-sm text-neutral-500 hover:text-neutral-300">
         ← LinkMeet
       </Link>
@@ -332,7 +332,7 @@ function CreatedView({ created }: { created: CreatedEvent }) {
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col gap-5 px-6 py-10">
+    <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-5 px-6 py-10">
       <Link href="/" className="text-sm text-neutral-500 hover:text-neutral-300">
         ← LinkMeet
       </Link>
