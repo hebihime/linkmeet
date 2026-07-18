@@ -22,7 +22,7 @@ export default function EventFinder({ events }: { events: EventListItem[] }) {
     : events;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-7">
       {events.length === 0 ? (
         <p className="py-6 text-center text-sm text-neutral-500">
           No events yet.
