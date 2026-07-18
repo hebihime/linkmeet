@@ -23,14 +23,6 @@ export default function EventFinder({ events }: { events: EventListItem[] }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <input
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search for your event"
-        aria-label="Search for your event"
-        className="rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-3 outline-none focus:border-neutral-400"
-      />
-
       {events.length === 0 ? (
         <p className="py-6 text-center text-sm text-neutral-500">
           No events yet.
@@ -71,6 +63,14 @@ export default function EventFinder({ events }: { events: EventListItem[] }) {
           ))}
         </div>
       )}
+
+      <input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search for your event"
+        aria-label="Search for your event"
+        className="rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-3 outline-none focus:border-neutral-400"
+      />
     </div>
   );
 }
