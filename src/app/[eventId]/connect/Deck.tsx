@@ -474,7 +474,7 @@ export default function Deck({
       <header className="mb-3 flex items-center">
         <button
           onClick={() => setFiltersOpen(true)}
-          aria-label="Deck filters"
+          aria-label="Settings"
           className="relative flex h-10 w-10 items-center justify-center rounded-full bg-white/5 text-neutral-300 transition hover:bg-white/10 hover:text-white"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-6 w-6">

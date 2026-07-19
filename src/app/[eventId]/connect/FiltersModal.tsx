@@ -36,7 +36,7 @@ export default function FiltersModal({
               <path d="M6 6l12 12M18 6L6 18" />
             </svg>
           </button>
-          <h2 className="text-lg font-bold">Deck filters</h2>
+          <h2 className="text-lg font-bold">Settings</h2>
           <button
             onClick={() => setDraft(DEFAULT_FILTERS)}
             className="text-sm text-neutral-400 transition hover:text-white"
