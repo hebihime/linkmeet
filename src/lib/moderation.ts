@@ -111,13 +111,29 @@ export function containsUnsafe(text: string): string | null {
   return spacedLetterMatch(text);
 }
 
+// Terms we deliberately allow in professional free text (a "sex therapist"
+// headline, "summa cum laude") but NOT as a bare interest tag, where there's
+// no surrounding context to make them legitimate. Re-blocks exactly the two
+// phrases removed from the preset above, at the tag level only.
+const TAG_ONLY_TERMS = new Set(["sex", "cum"]);
+
+/** Stricter than `containsUnsafe`: also blocks the context-free tag terms. */
+export function tagUnsafe(tag: string): string | null {
+  const general = containsUnsafe(tag);
+  if (general) return general;
+  for (const token of normalize(tag).split(" ")) {
+    if (TAG_ONLY_TERMS.has(token)) return token;
+  }
+  return null;
+}
+
 export function filterTags(tags: string[]): {
   clean: string[];
   rejected: string[];
 } {
   const clean: string[] = [];
   const rejected: string[] = [];
-  for (const tag of tags) (containsUnsafe(tag) ? rejected : clean).push(tag);
+  for (const tag of tags) (tagUnsafe(tag) ? rejected : clean).push(tag);
   return { clean, rejected };
 }
 
@@ -139,7 +155,8 @@ export function checkProfileText(fields: {
     ...fields.tags.map((t): [string, string] => ["tags", t]),
   ];
   for (const [field, text] of checks) {
-    const term = containsUnsafe(text);
+    // Tags are held to the stricter, context-free standard.
+    const term = field === "tags" ? tagUnsafe(text) : containsUnsafe(text);
     if (term) return { field, term };
   }
   return null;
