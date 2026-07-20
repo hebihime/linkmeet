@@ -47,7 +47,7 @@ export default function RequestList({
       <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-neutral-800 px-8 py-16 text-center">
         <h2 className="text-xl font-bold">No requests right now</h2>
         <p className="text-sm text-neutral-400">
-          When someone sends you a Meet or Link, it lands here.
+          When someone sends you a Meet, Link, or invite, it lands here.
         </p>
         <Link
           href={`/${eventId}/connect`}
@@ -88,10 +88,12 @@ export default function RequestList({
                   className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
                     item.kind === "meet"
                       ? "bg-fuchsia-500/20 text-fuchsia-300"
-                      : "bg-indigo-500/20 text-indigo-300"
+                      : item.kind === "invite"
+                        ? "bg-emerald-500/20 text-emerald-300"
+                        : "bg-indigo-500/20 text-indigo-300"
                   }`}
                 >
-                  {item.kind}
+                  {item.kind === "invite" ? "invited you" : item.kind}
                 </span>
               </div>
               {item.sender.headline && (
@@ -106,6 +108,13 @@ export default function RequestList({
               )}
             </div>
           </div>
+          {item.kind === "invite" && item.message && (
+            <p className="border-t border-neutral-800 px-4 py-3 text-sm text-neutral-300">
+              <span className="mr-1 text-neutral-500">“</span>
+              {item.message}
+              <span className="ml-0.5 text-neutral-500">”</span>
+            </p>
+          )}
           <div className="flex border-t border-neutral-800">
             <button
               onClick={() => respond(item, false)}

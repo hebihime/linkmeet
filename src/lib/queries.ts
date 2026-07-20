@@ -160,8 +160,9 @@ export async function getExploreStats(
 
 export type RequestItem = {
   id: string;
-  kind: "meet" | "link";
+  kind: "meet" | "link" | "invite";
   created_at: Date;
+  message: string | null; // invites carry an opening message; meet/link don't
   sender: Card;
 };
 
@@ -170,18 +171,19 @@ export async function getRequests(
   me: string,
 ): Promise<RequestItem[]> {
   const rows = await sql`
-    select i.id, i.kind, i.created_at,
+    select i.id, i.kind, i.created_at, i.message,
            p.id as sender_id, p.name, p.headline, p.tags, p.photo_url, p.photos
     from intents i
     join profiles p on p.id = i.from_id
     where i.event_id = ${eventId} and i.to_id = ${me}
-      and i.status = 'pending' and i.kind in ('meet','link')
+      and i.status = 'pending' and i.kind in ('meet','link','invite')
       and p.suspended_at is null
     order by i.created_at desc`;
   return rows.map((r) => ({
     id: r.id as string,
-    kind: r.kind as "meet" | "link",
+    kind: r.kind as "meet" | "link" | "invite",
     created_at: r.created_at as Date,
+    message: (r.message as string | null) ?? null,
     sender: {
       id: r.sender_id as string,
       name: r.name as string,
@@ -198,7 +200,7 @@ export async function getPendingRequestCount(eventId: string, me: string) {
     select count(*)::int as n from intents i
     join profiles p on p.id = i.from_id
     where i.event_id = ${eventId} and i.to_id = ${me}
-      and i.status = 'pending' and i.kind in ('meet','link')
+      and i.status = 'pending' and i.kind in ('meet','link','invite')
       and p.suspended_at is null`;
   return (rows[0]?.n as number) ?? 0;
 }
@@ -209,7 +211,22 @@ export type ConnectionListItem = {
   met_confirmed_at: Date | null;
   other: { id: string; name: string; photo_url: string | null };
   last: { body: string; at: Date; mine: boolean } | null;
+  unread: boolean; // other party has a message newer than my read cursor
 };
+
+// "Unread for me" as a SQL predicate: a message from the other party newer
+// than my per-side read cursor (null cursor = never opened). Shared by the
+// list query and the nav badge count so they can never disagree.
+const unreadForMe = (me: string) => sql`
+  exists (
+    select 1 from messages um
+    where um.connection_id = c.id
+      and um.sender_id <> ${me}
+      and (
+        (c.profile_a = ${me} and (c.read_a is null or um.created_at > c.read_a)) or
+        (c.profile_b = ${me} and (c.read_b is null or um.created_at > c.read_b))
+      )
+  )`;
 
 export async function getConnections(
   eventId: string,
@@ -218,7 +235,8 @@ export async function getConnections(
   const rows = await sql`
     select c.id, c.origin, c.met_confirmed_at,
            p.id as other_id, p.name as other_name, p.photo_url as other_photo,
-           m.body as last_body, m.created_at as last_at, m.sender_id as last_sender
+           m.body as last_body, m.created_at as last_at, m.sender_id as last_sender,
+           ${unreadForMe(me)} as unread
     from connections c
     join profiles p
       on p.id = case when c.profile_a = ${me} then c.profile_b else c.profile_a end
@@ -246,7 +264,17 @@ export async function getConnections(
           mine: r.last_sender === me,
         }
       : null,
+    unread: r.unread as boolean,
   }));
+}
+
+export async function getUnreadChatCount(eventId: string, me: string) {
+  const rows = await sql`
+    select count(*)::int as n from connections c
+    where c.event_id = ${eventId}
+      and (c.profile_a = ${me} or c.profile_b = ${me})
+      and ${unreadForMe(me)}`;
+  return (rows[0]?.n as number) ?? 0;
 }
 
 export type ConnectionDetail = {

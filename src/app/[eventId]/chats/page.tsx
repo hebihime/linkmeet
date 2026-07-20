@@ -75,12 +75,24 @@ export default async function ChatsPage({
                         </span>
                       )}
                     </div>
-                    <p className="truncate text-sm text-neutral-400">
+                    <p
+                      className={`truncate text-sm ${
+                        c.unread
+                          ? "font-semibold text-white"
+                          : "text-neutral-400"
+                      }`}
+                    >
                       {c.last
                         ? `${c.last.mine ? "You: " : ""}${c.last.body}`
                         : "Say hi 👋"}
                     </p>
                   </div>
+                  {c.unread && (
+                    <span
+                      aria-label="Unread messages"
+                      className="h-2.5 w-2.5 shrink-0 rounded-full bg-fuchsia-500"
+                    />
+                  )}
                 </Link>
               </li>
             ))}

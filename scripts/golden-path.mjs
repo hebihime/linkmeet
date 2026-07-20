@@ -294,7 +294,9 @@ try {
     where p.event_id = ${eventId} and p.id = ${freshTester} and p.suspended_at is null`;
   check("suspended profile is out of the deck pool", deckAfter.length === 0);
 
-  // ---- 8. invite: instant chat with the invite as first message ----------------
+  // ---- 8. invite to a TEST user: auto-accepted, opens the chat instantly -------
+  // (Test targets auto-accept so the loop stays solo-testable; real targets go
+  // through the consent gate in 8b.)
   const inviteTarget = inbox[1].from_id; // the silent decliner — invite them anyway?
   const untouched = testers
     .map((t) => t.id)
@@ -306,7 +308,7 @@ try {
     const [a3, b3] = me < untouched ? [me, untouched] : [untouched, me];
     const conn3 = await sql`
       select id from connections where profile_a = ${a3} and profile_b = ${b3}`;
-    check("invite opened a connection instantly", conn3.length === 1);
+    check("invite to a test user opens a connection instantly", conn3.length === 1);
     const first = await sql`
       select body, sender_id from messages where connection_id = ${conn3[0].id}
       order by created_at limit 1`;
@@ -318,6 +320,59 @@ try {
     check("invite: no untouched tester available (seed too small)", false);
   }
   void inviteTarget;
+
+  // ---- 8b. invite to a REAL user: consent-gated request, not an instant chat ---
+  // A real target must accept before the thread opens; the inviter's message is
+  // seeded as the first message on accept. Simulate by dropping a pending invite
+  // from a fresh tester into my inbox, then accepting it as me.
+  const eligible = await sql`
+    select t.id from profiles t
+    where t.event_id = ${eventId} and t.is_test = true and t.id <> ${me}
+      and not exists (select 1 from intents i where i.event_id = ${eventId}
+        and ((i.from_id = t.id and i.to_id = ${me}) or (i.from_id = ${me} and i.to_id = t.id)))
+      and not exists (select 1 from connections c where
+        (c.profile_a = ${me} and c.profile_b = t.id) or (c.profile_b = ${me} and c.profile_a = t.id))
+    limit 1`;
+  const inviter = eligible[0]?.id;
+  if (inviter) {
+    const invId = "gp" + Math.random().toString(36).slice(2, 10);
+    await sql`
+      insert into intents (id, event_id, from_id, to_id, kind, message, status)
+      values (${invId}, ${eventId}, ${inviter}, ${me}, 'invite', ${"coffee before the keynote?"}, 'pending')`;
+    const [ia, ib] = me < inviter ? [me, inviter] : [inviter, me];
+    const preConn = await sql`
+      select 1 from connections where profile_a = ${ia} and profile_b = ${ib}`;
+    check("pending invite opens NO connection until accepted", preConn.length === 0);
+
+    await callAction(`/${eventId}/requests`, "respondToRequest", [invId, true]);
+    const invConn = await sql`
+      select id from connections where profile_a = ${ia} and profile_b = ${ib}`;
+    check("accepting an invite opens the connection", invConn.length === 1);
+    const invFirst = await sql`
+      select body, sender_id from messages where connection_id = ${invConn[0]?.id}
+      order by created_at limit 1`;
+    check(
+      "accepted invite seeds the inviter's message first",
+      invFirst[0]?.body === "coffee before the keynote?" && invFirst[0]?.sender_id === inviter,
+    );
+
+    // ---- 8c. unread cursor: the seeded message is unread until I open it -------
+    const unreadFor = async (connId) => {
+      const r = await sql`
+        select count(*)::int as n from connections c
+        where c.id = ${connId}
+          and exists (select 1 from messages um where um.connection_id = c.id
+            and um.sender_id <> ${me}
+            and ((c.profile_a = ${me} and (c.read_a is null or um.created_at > c.read_a))
+              or (c.profile_b = ${me} and (c.read_b is null or um.created_at > c.read_b))))`;
+      return r[0].n;
+    };
+    check("invite message is unread before I open the thread", (await unreadFor(invConn[0].id)) === 1);
+    await callAction(`/${eventId}/chats/${invConn[0].id}`, "fetchThread", [invConn[0].id]);
+    check("opening the thread clears its unread", (await unreadFor(invConn[0].id)) === 0);
+  } else {
+    check("invite-as-request: no eligible tester (seed too small)", false);
+  }
 
   // ---- 9. the other two access modes, over the wire ----------------------------
   // open: email alone gets a session.

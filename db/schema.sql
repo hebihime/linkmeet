@@ -117,6 +117,11 @@ alter table connections add column if not exists met_lat_b double precision;
 alter table connections add column if not exists met_lng_b double precision;
 alter table connections add column if not exists met_distance_m double precision;
 alter table connections add column if not exists met_confidence int; -- 0..100
+-- Per-side read cursor for the unread badge: last time each participant opened
+-- the thread. A thread is "unread" for me if the other party has a message
+-- newer than my cursor (null cursor = never opened = everything unread).
+alter table connections add column if not exists read_a timestamptz;
+alter table connections add column if not exists read_b timestamptz;
 
 create table if not exists messages (
   id            text primary key,

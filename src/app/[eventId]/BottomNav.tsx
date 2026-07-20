@@ -52,20 +52,29 @@ const ORDER: Tab[] = ["explore", "connect", "requests", "chats", "profile"];
 export default function BottomNav({
   eventId,
   pending,
+  unreadChats,
 }: {
   eventId: string;
   pending: number;
+  unreadChats: number;
 }) {
   const pathname = usePathname();
   const active = ORDER.find((tab) => pathname === `/${eventId}/${tab}`);
   // Only the five tab screens get the bar — not login or chat threads.
   if (!active) return null;
 
+  // Per-tab notification counts drive the fuchsia badge.
+  const badges: Partial<Record<Tab, number>> = {
+    requests: pending,
+    chats: unreadChats,
+  };
+
   return (
     <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-neutral-800 bg-neutral-950/90 backdrop-blur-md">
       <div className="mx-auto flex max-w-md items-stretch justify-between px-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-2">
         {ORDER.map((tab) => {
           const isActive = tab === active;
+          const badge = badges[tab] ?? 0;
           return (
             <Link
               key={tab}
@@ -75,9 +84,9 @@ export default function BottomNav({
               }`}
             >
               <span>{ICONS[tab]}</span>
-              {tab === "requests" && pending > 0 && (
+              {badge > 0 && (
                 <span className="absolute right-1/2 top-0 flex h-4 min-w-4 -translate-y-1 translate-x-4 items-center justify-center rounded-full bg-fuchsia-500 px-1 text-[10px] font-bold text-white">
-                  {pending > 9 ? "9+" : pending}
+                  {badge > 9 ? "9+" : badge}
                 </span>
               )}
               <span>{LABELS[tab]}</span>

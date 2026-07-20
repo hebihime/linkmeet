@@ -306,6 +306,24 @@ async function ensureConnection(
   return existing[0].id as string;
 }
 
+// An invite's opening message (and optional photo) becomes the first message(s)
+// in the thread. Seeded on send for a test target, or on accept for a real one.
+async function seedInviteMessages(
+  connectionId: string,
+  senderId: string,
+  message: string,
+  photoUrl: string | null,
+) {
+  await sql`
+    insert into messages (id, connection_id, sender_id, body)
+    values (${newId()}, ${connectionId}, ${senderId}, ${message})`;
+  if (photoUrl) {
+    await sql`
+      insert into messages (id, connection_id, sender_id, body)
+      values (${newId()}, ${connectionId}, ${senderId}, ${photoUrl})`;
+  }
+}
+
 export async function sendIntent(input: {
   targetId: string;
   kind: IntentKind;
@@ -343,13 +361,19 @@ export async function sendIntent(input: {
     const message = (input.message ?? "").trim();
     if (!message) return none;
     const photoUrl = (input.photoUrl ?? "").trim() || null;
+    // Invites are consent-gated like meet/link: they land in the recipient's
+    // requests inbox (carrying this message) and only open a thread once
+    // accepted. Test targets still auto-accept so the loop stays solo-testable.
+    const autoAccept = target.is_test as boolean;
 
     const inserted = await sql`
       insert into intents (id, event_id, from_id, to_id, kind, message, photo_url, status, responded_at)
-      values (${newId()}, ${session.eventId}, ${me}, ${targetId}, 'invite', ${message}, ${photoUrl}, 'accepted', now())
+      values (${newId()}, ${session.eventId}, ${me}, ${targetId}, 'invite', ${message}, ${photoUrl},
+              ${autoAccept ? "accepted" : "pending"}, ${autoAccept ? new Date() : null})
       on conflict (event_id, from_id, to_id) do nothing
       returning id`;
     if (!inserted[0]) return none; // already acted on this person
+    if (!autoAccept) return none; // pending request; receiver decides
 
     const connectionId = await ensureConnection(
       session.eventId,
@@ -357,17 +381,8 @@ export async function sendIntent(input: {
       targetId,
       "invite",
     );
-    // The invite IS the first message; an attached photo goes in as a
-    // follow-up image message (the thread renders bare image URLs inline).
-    await sql`
-      insert into messages (id, connection_id, sender_id, body)
-      values (${newId()}, ${connectionId}, ${me}, ${message})`;
-    if (photoUrl) {
-      await sql`
-        insert into messages (id, connection_id, sender_id, body)
-        values (${newId()}, ${connectionId}, ${me}, ${photoUrl})`;
-    }
-    if (target.is_test) await testUserReply(connectionId, targetId);
+    await seedInviteMessages(connectionId, me, message, photoUrl);
+    await testUserReply(connectionId, targetId);
     return none; // invites open a thread quietly — no celebration overlay
   }
 
@@ -430,8 +445,8 @@ export async function respondToRequest(
     update intents
     set status = ${accept ? "accepted" : "declined"}, responded_at = now()
     where id = ${intentId} and to_id = ${me} and status = 'pending'
-      and kind in ('meet','link')
-    returning from_id, kind, event_id`;
+      and kind in ('meet','link','invite')
+    returning from_id, kind, event_id, message, photo_url`;
   const intent = rows[0];
   if (!intent || !accept) return { connectionId: null }; // declines are silent
 
@@ -441,6 +456,16 @@ export async function respondToRequest(
     intent.from_id as string,
     intent.kind as string,
   );
+
+  // Accepting an invite opens the thread with the inviter's original message.
+  if (intent.kind === "invite" && intent.message) {
+    await seedInviteMessages(
+      connectionId,
+      intent.from_id as string,
+      intent.message as string,
+      (intent.photo_url as string | null) ?? null,
+    );
+  }
 
   const sender = await sql`
     select is_test from profiles where id = ${intent.from_id} limit 1`;
@@ -501,6 +526,14 @@ export async function fetchThread(
   if (!session) return null;
   const conn = await myConnection(connectionId, session.profileId);
   if (!conn) return null;
+
+  // Opening or polling the thread marks it read for me — clears the unread dot
+  // and nav badge on the next tab render. Cursor is per-side (a/b).
+  if (conn.profile_a === session.profileId) {
+    await sql`update connections set read_a = now() where id = ${connectionId}`;
+  } else {
+    await sql`update connections set read_b = now() where id = ${connectionId}`;
+  }
 
   const [messages, myRating] = await Promise.all([
     getMessages(connectionId),

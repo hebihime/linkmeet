@@ -46,11 +46,14 @@ export default function Thread({
   const bottomRef = useRef<HTMLDivElement>(null);
   const countRef = useRef(initialMessages.length);
 
-  // Poll for new messages + met-state — no websockets by design.
+  // Poll for new messages + met-state — no websockets by design. fetchThread
+  // also marks the thread read for me, so run it immediately on mount (not just
+  // after the first interval) to clear the unread badge right away.
   useEffect(() => {
-    const id = setInterval(async () => {
+    let cancelled = false;
+    const tick = async () => {
       const state = await fetchThread(connectionId);
-      if (!state) return;
+      if (cancelled || !state) return;
       setMet(state.met);
       setRated(state.rated);
       setMessages((current) => {
@@ -65,8 +68,13 @@ export default function Thread({
         );
         return [...state.messages, ...temps];
       });
-    }, POLL_MS);
-    return () => clearInterval(id);
+    };
+    tick();
+    const id = setInterval(tick, POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
   }, [connectionId, meId]);
 
   useEffect(() => {

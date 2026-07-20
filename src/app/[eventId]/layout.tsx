@@ -1,5 +1,5 @@
 import { getSession } from "@/lib/session";
-import { getPendingRequestCount } from "@/lib/queries";
+import { getPendingRequestCount, getUnreadChatCount } from "@/lib/queries";
 import BottomNav from "./BottomNav";
 
 // The tab bar lives here so it persists across tab navigations instead of
@@ -19,14 +19,23 @@ export default async function EventLayout({
     session?.profileId && session.eventId === eventId
       ? session.profileId
       : null;
-  const pending = profileId
-    ? await getPendingRequestCount(eventId, profileId)
-    : 0;
+  const [pending, unreadChats] = profileId
+    ? await Promise.all([
+        getPendingRequestCount(eventId, profileId),
+        getUnreadChatCount(eventId, profileId),
+      ])
+    : [0, 0];
 
   return (
     <>
       {children}
-      {profileId && <BottomNav eventId={eventId} pending={pending} />}
+      {profileId && (
+        <BottomNav
+          eventId={eventId}
+          pending={pending}
+          unreadChats={unreadChats}
+        />
+      )}
     </>
   );
 }
