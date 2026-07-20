@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { fetchThread, sendMessage, type MetState } from "@/lib/actions";
 import type { Card, Message } from "@/lib/queries";
 import MeetVerify from "./MeetVerify";
@@ -45,6 +46,7 @@ export default function Thread({
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const countRef = useRef(initialMessages.length);
+  const router = useRouter();
 
   // Poll for new messages + met-state — no websockets by design. fetchThread
   // also marks the thread read for me, so run it immediately on mount (not just
@@ -248,6 +250,7 @@ export default function Thread({
           connectionId={connectionId}
           otherName={other.name}
           onClose={() => setSheet(null)}
+          onDone={() => router.push(`/${eventId}/chats`)}
         />
       )}
     </main>

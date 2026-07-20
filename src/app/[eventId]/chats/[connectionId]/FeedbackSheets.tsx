@@ -118,10 +118,14 @@ export function ReportSheet({
   connectionId,
   otherName,
   onClose,
+  onDone,
 }: {
   connectionId: string;
   otherName: string;
   onClose: () => void;
+  // Fires after a successful report — the conversation is now deleted, so the
+  // parent navigates away from the dead thread.
+  onDone: () => void;
 }) {
   const [reason, setReason] = useState<string | null>(null);
   const [detail, setDetail] = useState("");
@@ -140,15 +144,14 @@ export function ReportSheet({
   }
 
   return (
-    <Sheet title={`Report ${firstName}`} onClose={onClose}>
+    <Sheet title={`Report ${firstName}`} onClose={sent ? onDone : onClose}>
       {sent ? (
         <div className="flex flex-col items-center gap-4 pb-2 text-center">
           <p className="text-sm text-neutral-300">
-            Thank you — your report was received and will be reviewed.{" "}
-            {firstName} won&apos;t know it came from you.
+            {`Thanks — your report was received and will be reviewed. ${firstName} has been blocked and your conversation removed. They won't know it came from you.`}
           </p>
           <button
-            onClick={onClose}
+            onClick={onDone}
             className="rounded-full bg-white px-6 py-3 font-semibold text-black transition hover:bg-neutral-200"
           >
             Done

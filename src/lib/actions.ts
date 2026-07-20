@@ -8,7 +8,7 @@ import { makeEventId, newId, newCode, normalizeEmail } from "./ids";
 import { getDeckCards, getMessages, type Card, type Message } from "./queries";
 import type { DeckFilters } from "./filters";
 import { seedTestUsers, seedTestRequests, testUserReply } from "./seed";
-import { checkProfileText } from "./moderation";
+import { checkProfileText, containsUnsafe } from "./moderation";
 import { POSITIVE_KEYS, REPORT_KEYS } from "./feedback";
 
 // ---- Create event (three access modes) ------------------------------------
@@ -324,6 +324,18 @@ async function seedInviteMessages(
   }
 }
 
+/**
+ * Moderate a free-text message body (invite openers, and later chat). Returns
+ * the offending term, or null when clean. Same engine as profile fields; the
+ * single seam an LLM pass can later slot behind. Cheap + deterministic today.
+ */
+export async function moderateMessage(
+  text: string,
+): Promise<{ term: string } | null> {
+  const term = containsUnsafe(text.trim());
+  return term ? { term } : null;
+}
+
 export async function sendIntent(input: {
   targetId: string;
   kind: IntentKind;
@@ -360,6 +372,9 @@ export async function sendIntent(input: {
   if (kind === "invite") {
     const message = (input.message ?? "").trim();
     if (!message) return none;
+    // Server-side backstop: the composer validates before it lets the card fly
+    // off, but never trust the client — an unsafe invite body never persists.
+    if (containsUnsafe(message)) return none;
     const photoUrl = (input.photoUrl ?? "").trim() || null;
     // Invites are consent-gated like meet/link: they land in the recipient's
     // requests inbox (carrying this message) and only open a thread once
@@ -851,5 +866,19 @@ export async function submitSafetyReport(
              where reported_id = ${reportedId} and reason <> 'no_show')
             >= ${SUSPEND_REPORTER_THRESHOLD}`;
   }
+
+  // Reporting also blocks: drop the pair from each other's decks with a
+  // bidirectional 'pass' (so neither resurfaces or can re-invite the other),
+  // then delete the conversation. The connection FK sets the report's
+  // connection_id null on delete, so the report itself survives for review.
+  const eventId = conn.event_id as string;
+  await sql`
+    insert into intents (id, event_id, from_id, to_id, kind, status, responded_at)
+    values
+      (${newId()}, ${eventId}, ${me}, ${reportedId}, 'pass', 'none', now()),
+      (${newId()}, ${eventId}, ${reportedId}, ${me}, 'pass', 'none', now())
+    on conflict (event_id, from_id, to_id)
+      do update set kind = 'pass', status = 'none', responded_at = now()`;
+  await sql`delete from connections where id = ${connectionId}`;
   return { ok: true };
 }

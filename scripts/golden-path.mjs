@@ -282,9 +282,11 @@ try {
   await callAction(`/${eventId}/chats/${conn1[0].id}`, "submitSafetyReport", [
     conn1[0].id, "safety", "golden-path test report",
   ]);
+  // Report keys on reporter/reported, not connection_id: the report also
+  // deletes the conversation, which nulls the report's connection_id.
   const myReport = await sql`
     select 1 from safety_reports
-    where connection_id = ${conn1[0].id} and reporter_id = ${me}`;
+    where reporter_id = ${me} and reported_id = ${freshTester}`;
   check("safety report persisted", myReport.length === 1);
   const suspended = await sql`
     select suspended_at from profiles where id = ${freshTester}`;
@@ -293,6 +295,25 @@ try {
     select 1 from profiles p
     where p.event_id = ${eventId} and p.id = ${freshTester} and p.suspended_at is null`;
   check("suspended profile is out of the deck pool", deckAfter.length === 0);
+
+  // ---- 7d. reporting = block + delete the conversation -------------------------
+  const goneConn = await sql`select 1 from connections where id = ${conn1[0].id}`;
+  check("report deletes the conversation", goneConn.length === 0);
+  const goneMsgs = await sql`select 1 from messages where connection_id = ${conn1[0].id}`;
+  check("report deletes the conversation's messages", goneMsgs.length === 0);
+  const blocks = await sql`
+    select from_id, to_id from intents
+    where event_id = ${eventId} and kind = 'pass'
+      and ((from_id = ${me} and to_id = ${freshTester})
+        or (from_id = ${freshTester} and to_id = ${me}))`;
+  check("report blocks both directions (bidirectional pass)", blocks.length === 2);
+  // The blocked pair can't resurface in each other's decks.
+  const inMyDeck = await sql`
+    select 1 from profiles p
+    where p.event_id = ${eventId} and p.id = ${freshTester}
+      and not exists (select 1 from intents i
+        where i.event_id = ${eventId} and i.from_id = ${me} and i.to_id = p.id)`;
+  check("blocked profile can't reappear in my deck", inMyDeck.length === 0);
 
   // ---- 8. invite to a TEST user: auto-accepted, opens the chat instantly -------
   // (Test targets auto-accept so the loop stays solo-testable; real targets go
