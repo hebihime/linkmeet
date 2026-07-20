@@ -23,13 +23,21 @@ export default function FiltersModal({
   const set = (patch: Partial<DeckFilters>) =>
     setDraft((d) => ({ ...d, ...patch }));
 
+  // Settings auto-apply on dismiss — no explicit "Apply" step. Only redeal the
+  // hand if something actually changed; onApply refetches, so a no-op close
+  // must fall through to a plain onClose.
+  const close = () => {
+    if (JSON.stringify(draft) !== JSON.stringify(filters)) onApply(draft);
+    else onClose();
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex justify-center bg-neutral-950">
       <div className="flex h-full w-full max-w-md flex-col">
         <header className="flex items-center justify-between px-5 pb-3 pt-6">
           <button
-            onClick={onClose}
-            aria-label="Close filters"
+            onClick={close}
+            aria-label="Close settings"
             className="flex h-9 w-9 items-center justify-center rounded-full text-neutral-400 transition hover:text-white"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-6 w-6">
@@ -130,10 +138,10 @@ export default function FiltersModal({
 
         <div className="border-t border-neutral-800 px-5 pb-[max(env(safe-area-inset-bottom),1.25rem)] pt-4">
           <button
-            onClick={() => onApply(draft)}
+            onClick={close}
             className="w-full rounded-full bg-white px-6 py-3 font-semibold text-black transition hover:bg-neutral-200"
           >
-            Apply
+            Done
           </button>
         </div>
       </div>
