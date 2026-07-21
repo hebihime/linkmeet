@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getEvent } from "@/lib/queries";
+import { getEvent, profileExistsInEvent } from "@/lib/queries";
 import { getSession } from "@/lib/session";
 import LoginForm from "./LoginForm";
 
@@ -23,7 +23,13 @@ export default async function EventEntry({
   }
 
   const session = await getSession();
-  if (session?.eventId === eventId && session.profileId) {
+  // Only skip login for a session whose profile actually still exists — a stale
+  // cookie (profile deleted) falls through to the login form instead.
+  if (
+    session?.eventId === eventId &&
+    session.profileId &&
+    (await profileExistsInEvent(session.profileId, eventId))
+  ) {
     // Land on the deck when it's open; on Explore (countdown) when it isn't.
     redirect(`/${eventId}/${event.live ? "connect" : "explore"}`);
   }

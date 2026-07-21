@@ -58,6 +58,19 @@ export async function getProfile(profileId: string) {
   return rows[0] as Profile | undefined;
 }
 
+// Does this session's profile still exist in this event? Guards against stale
+// session cookies whose profileId was deleted (e.g. a DB reset that reused the
+// event id) — the JWT is still validly signed, but the row is gone.
+export async function profileExistsInEvent(
+  profileId: string,
+  eventId: string,
+): Promise<boolean> {
+  const rows = await sql`
+    select 1 from profiles
+    where id = ${profileId} and event_id = ${eventId} limit 1`;
+  return rows.length > 0;
+}
+
 // Deck candidates: never anyone you've already acted on (any intent, incl.
 // pass), never an existing connection, never yourself, never ids in `exclude`
 // (cards already in the client's hand). Ranked by shared-tag overlap (most

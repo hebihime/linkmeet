@@ -5,7 +5,13 @@ import { SignJWT, jwtVerify } from "jose";
 import { sql } from "./db";
 import { getSession, setSession, type Session } from "./session";
 import { makeEventId, newId, newCode, normalizeEmail } from "./ids";
-import { getDeckCards, getMessages, type Card, type Message } from "./queries";
+import {
+  getDeckCards,
+  getMessages,
+  profileExistsInEvent,
+  type Card,
+  type Message,
+} from "./queries";
 import type { DeckFilters } from "./filters";
 import { seedTestUsers, seedTestRequests, testUserReply } from "./seed";
 import { checkProfileText, containsUnsafe } from "./moderation";
@@ -283,6 +289,10 @@ export type SendIntentResult = { celebration: Celebration | null };
 async function requireProfile(): Promise<(Session & { profileId: string }) | null> {
   const session = await getSession();
   if (!session?.profileId) return null;
+  // Stale cookie whose profile was deleted (e.g. a DB reset): treat as no
+  // profile so actions no-op instead of writing against a dangling FK.
+  if (!(await profileExistsInEvent(session.profileId, session.eventId)))
+    return null;
   return session as Session & { profileId: string };
 }
 
