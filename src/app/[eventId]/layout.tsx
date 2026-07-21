@@ -1,6 +1,7 @@
 import { getSession } from "@/lib/session";
 import { getPendingRequestCount, getUnreadChatCount } from "@/lib/queries";
 import BottomNav from "./BottomNav";
+import MatchNotifier from "./MatchNotifier";
 
 // The tab bar lives here so it persists across tab navigations instead of
 // re-rendering (and re-querying) with every page. No nav until a profile
@@ -30,11 +31,18 @@ export default async function EventLayout({
     <>
       {children}
       {profileId && (
-        <BottomNav
-          eventId={eventId}
-          pending={pending}
-          unreadChats={unreadChats}
-        />
+        <>
+          <MatchNotifier
+            eventId={eventId}
+            initialPending={pending}
+            initialUnread={unreadChats}
+          />
+          <BottomNav
+            eventId={eventId}
+            pending={pending}
+            unreadChats={unreadChats}
+          />
+        </>
       )}
     </>
   );

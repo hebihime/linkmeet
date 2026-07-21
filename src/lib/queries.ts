@@ -290,6 +290,72 @@ export async function getUnreadChatCount(eventId: string, me: string) {
   return (rows[0]?.n as number) ?? 0;
 }
 
+export type MatchNotice = {
+  id: string; // connection id — the thread to open
+  name: string;
+  photo_url: string | null;
+  created_at: string; // ISO; the client advances its cursor past this
+};
+
+// New connections (matches) for `me` created strictly after `since`. Powers the
+// live match toast — near-zero rows on a normal poll, so it stays cheap. A
+// person has few connections, so the profile_a/profile_b indexes carry it and
+// the created_at cutoff is a tiny residual filter.
+export async function getMatchesSince(
+  eventId: string,
+  me: string,
+  since: string,
+): Promise<MatchNotice[]> {
+  const rows = await sql`
+    select c.id, c.created_at, p.name, p.photo_url
+    from connections c
+    join profiles p
+      on p.id = case when c.profile_a = ${me} then c.profile_b else c.profile_a end
+    where c.event_id = ${eventId}
+      and (c.profile_a = ${me} or c.profile_b = ${me})
+      and c.created_at > ${since}::timestamptz
+      and p.suspended_at is null
+    order by c.created_at asc`;
+  return rows.map((r) => ({
+    id: r.id as string,
+    name: r.name as string,
+    photo_url: (r.photo_url as string | null) ?? null,
+    created_at: (r.created_at as Date).toISOString(),
+  }));
+}
+
+export type PollState = {
+  serverTime: string; // DB clock — the authoritative next cursor
+  pending: number;
+  unreadChats: number;
+  matches: MatchNotice[]; // empty on the baseline poll (no `since` yet)
+};
+
+// One poll → one request → a handful of cheap indexed queries in parallel.
+// `serverTime` comes from the DB clock so the cursor never drifts against the
+// client's wall clock. Skip the matches query entirely on the baseline poll
+// (since is null) so first load never toasts pre-existing connections.
+export async function getPollState(
+  eventId: string,
+  me: string,
+  since: string | null,
+): Promise<PollState> {
+  const [pending, unreadChats, matches, nowRows] = await Promise.all([
+    getPendingRequestCount(eventId, me),
+    getUnreadChatCount(eventId, me),
+    since
+      ? getMatchesSince(eventId, me, since)
+      : Promise.resolve([] as MatchNotice[]),
+    sql`select now() as t`,
+  ]);
+  return {
+    serverTime: (nowRows[0].t as Date).toISOString(),
+    pending,
+    unreadChats,
+    matches,
+  };
+}
+
 export type ConnectionDetail = {
   id: string;
   event_id: string;
