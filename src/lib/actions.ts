@@ -544,13 +544,19 @@ function metStateFor(
   };
 }
 
+// null = transient/unauthenticated (client keeps the thread as-is); { gone }
+// = the connection no longer exists for me (the other party reported/blocked
+// me, or it was otherwise deleted) so the client closes the thread on my end
+// too. A deleted connection cascade-deletes its messages, so this is the only
+// signal the reported side gets — kept deliberately neutral, no "you were
+// reported".
 export async function fetchThread(
   connectionId: string,
-): Promise<ThreadState | null> {
+): Promise<ThreadState | { gone: true } | null> {
   const session = await requireProfile();
   if (!session) return null;
   const conn = await myConnection(connectionId, session.profileId);
-  if (!conn) return null;
+  if (!conn) return { gone: true };
 
   // Opening or polling the thread marks it read for me — clears the unread dot
   // and nav badge on the next tab render. Cursor is per-side (a/b).

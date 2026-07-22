@@ -54,8 +54,17 @@ export default function Thread({
   useEffect(() => {
     let cancelled = false;
     const tick = async () => {
+      if (cancelled) return;
       const state = await fetchThread(connectionId);
       if (cancelled || !state) return;
+      // Connection deleted out from under me (the other party reported/blocked
+      // me): close this thread on my end too and drop back to the chat list.
+      // cancelled stops further polling; navigation unmounts + clears the timer.
+      if ("gone" in state) {
+        cancelled = true;
+        router.replace(`/${eventId}/chats?closed=1`);
+        return;
+      }
       setMet(state.met);
       setRated(state.rated);
       setMessages((current) => {
@@ -77,7 +86,7 @@ export default function Thread({
       cancelled = true;
       clearInterval(id);
     };
-  }, [connectionId, meId]);
+  }, [connectionId, meId, eventId, router]);
 
   useEffect(() => {
     if (messages.length !== countRef.current) {

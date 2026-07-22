@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getConnections } from "@/lib/queries";
 import { requireAttendee } from "@/lib/auth";
+import ClosedNotice from "./ClosedNotice";
 
 function initials(name: string) {
   return name
@@ -14,10 +15,13 @@ function initials(name: string) {
 
 export default async function ChatsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ eventId: string }>;
+  searchParams: Promise<{ closed?: string }>;
 }) {
   const { eventId } = await params;
+  const { closed } = await searchParams;
   const session = await requireAttendee(eventId);
   const connections = await getConnections(eventId, session.profileId);
 
@@ -29,6 +33,8 @@ export default async function ChatsPage({
             Your connections at this event.
           </p>
         </header>
+
+        {closed && <ClosedNotice eventId={eventId} />}
 
         {connections.length === 0 ? (
           <div className="flex flex-col items-center gap-3 rounded-3xl border border-dashed border-neutral-800 px-8 py-16 text-center">
